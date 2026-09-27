@@ -162,13 +162,16 @@ function createUpdater({ send, settings, arch = process.arch }) {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowPrerelease = false;
-    autoUpdater.allowDowngrade = false;
-    // Канал задаём явно и это обязательно: electron-builder кладёт в
-    // app-update.yml только owner/repo/provider (поле channel туда не попадает),
+    // Канал задаём явно, и это обязательно: electron-builder кладёт в
+    // app-update.yml только owner/repo/provider (поля channel там нет),
     // поэтому без этой строки 32-битная сборка искала бы `latest.yml` и
-    // скачала бы 64-битный установщик. Проверено сборкой: 32-битная сборка
-    // ищет `win32.yml`, 64-битная — `latest.yml`.
+    // скачала бы 64-битный установщик.
     autoUpdater.channel = state.channel;
+    // Порядок важен: сеттер channel в electron-updater сам выставляет
+    // allowDowngrade = true (чтобы можно было вернуться на старую ветку).
+    // Запрет отката ставим ПОСЛЕ канала — иначе браузер предложил бы
+    // «обновление» на более старую версию, если такой релиз опубликуют позже.
+    autoUpdater.allowDowngrade = false;
     autoUpdater.logger = {
       info: (m) => console.log('[Kitsune] update:', m),
       warn: (m) => console.warn('[Kitsune] update:', m),

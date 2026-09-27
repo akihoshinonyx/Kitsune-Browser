@@ -13,10 +13,18 @@ build/builder-effective-config.yaml
 
 # Логи и мусор редакторов
 *.log
+*.err
 out.txt
 smoke.txt
 pack.txt
 asar.txt
+dry.txt
+rel.txt
+rel2.txt
+upd-*.log
+install-check.txt
+script-*.txt
+COMMIT_MSG.txt
 npm-debug.log*
 .DS_Store
 Thumbs.db

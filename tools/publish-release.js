@@ -51,6 +51,7 @@ function token() {
 }
 
 function humanSize(bytes) {
+  if (bytes < 1024) return `${bytes} Б`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
@@ -78,6 +79,16 @@ async function request(url, options = {}) {
   return res.json();
 }
 
+/**
+ * Файлы, которые в релиз не попадают.
+ *
+ * `builder-debug.yml` создаётся electron-builder для отладки, но подходит под
+ * маску `*.yml` — из-за этого он однажды уехал в релиз, а повторная загрузка
+ * (второй такой файл из другой архитектуры) получила от GitHub 422 и оборвала
+ * публикацию. Отсюда и явный список исключений, и проверка в конце.
+ */
+const IGNORED_ASSETS = new Set(['builder-debug.yml', 'builder-effective-config.yaml']);
+
 /** Файлы релиза: установщики, portable, blockmap, каналы и контрольные суммы */
 function collectAssets() {
   const assets = [];
@@ -85,6 +96,7 @@ function collectAssets() {
     const dir = path.join(RELEASE, arch);
     if (!fs.existsSync(dir)) continue;
     for (const name of fs.readdirSync(dir).sort()) {
+      if (IGNORED_ASSETS.has(name)) continue;
       if (/\.(exe|blockmap|yml)$/.test(name)) assets.push({ file: path.join(dir, name), name });
     }
   }
@@ -133,22 +145,83 @@ async function ensureRelease(tag, version, notes, draft) {
 }
 
 async function uploadAssets(release, assets) {
-  const existing = new Map((release.assets || []).map((a) => [a.name, a]));
+  // Карта имён → ассет: и то, что уже лежит в релизе, и то, что мы загрузили
+  // в этом запуске. Повтор имени GitHub не допускает (422), поэтому перед
+  // загрузкой старый файл удаляется.
+  const byName = new Map((release.assets || []).map((a) => [a.name, a]));
 
   for (const asset of assets) {
-    const old = existing.get(asset.name);
-    if (old) {
-      await request(`${API}/releases/assets/${old.id}`, { method: 'DELETE' });
+    const existing = byName.get(asset.name);
+    if (existing) {
+      await request(`${API}/releases/assets/${existing.id}`, { method: 'DELETE' });
+      byName.delete(asset.name);
     }
     const size = fs.statSync(asset.file).size;
-    process.stdout.write(`  ${old ? 'перезапись' : 'загрузка'} ${asset.name} (${humanSize(size)}) … `);
-    await request(`${UPLOAD_API}/${release.id}/assets?name=${encodeURIComponent(asset.name)}`, {
+    process.stdout.write(`  ${existing ? 'перезапись' : 'загрузка'} ${asset.name} (${humanSize(size)}) … `);
+    const uploaded = await request(`${UPLOAD_API}/${release.id}/assets?name=${encodeURIComponent(asset.name)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
       body: fs.readFileSync(asset.file)
     });
+    byName.set(uploaded.name, uploaded);
     console.log('готово');
   }
+}
+
+/** Убирает из релиза файлы, которых там быть не должно (мусор прошлых запусков) */
+async function pruneAssets(release, expected) {
+  const names = new Set(expected.map((a) => a.name));
+  for (const asset of release.assets || []) {
+    if (names.has(asset.name)) continue;
+    console.log(`  удаляем лишний файл: ${asset.name}`);
+    await request(`${API}/releases/assets/${asset.id}`, { method: 'DELETE' });
+  }
+}
+
+/**
+ * Проверяет, что в релизе действительно лежит всё нужное и что каналы
+ * обновления указывают на существующие файлы. Молчаливый «частично
+ * опубликованный» релиз хуже упавшей сборки, поэтому проверка обязательна.
+ */
+async function verifyRelease(tag, expected) {
+  const fresh = await request(`${API}/releases/tags/${encodeURIComponent(tag)}`);
+  const byName = new Map((fresh.assets || []).map((a) => [a.name, a]));
+  const problems = [];
+
+  for (const asset of expected) {
+    const uploaded = byName.get(asset.name);
+    if (!uploaded) {
+      problems.push(`нет файла ${asset.name}`);
+      continue;
+    }
+    const local = fs.statSync(asset.file).size;
+    if (uploaded.size !== local) {
+      problems.push(`${asset.name}: размер на GitHub ${uploaded.size} вместо ${local}`);
+    }
+  }
+
+  // Каждый канал должен ссылаться на установщик, который тоже загружен
+  for (const channel of ['latest.yml', 'win32.yml']) {
+    const asset = expected.find((a) => a.name === channel);
+    if (!asset) {
+      problems.push(`нет файла канала ${channel}`);
+      continue;
+    }
+    const text = fs.readFileSync(asset.file, 'utf8');
+    const target = (text.match(/^path:\s*(.+)$/m) || [])[1];
+    if (!target || !byName.has(target.trim())) {
+      problems.push(`${channel} ссылается на отсутствующий файл: ${target || '—'}`);
+    }
+  }
+
+  if (problems.length) throw new Error(`релиз опубликован неполностью: ${problems.join('; ')}`);
+
+  console.log('\nВ релизе:');
+  for (const asset of expected) {
+    const uploaded = byName.get(asset.name);
+    console.log(`  ${uploaded.name.padEnd(52)} ${humanSize(uploaded.size).padStart(9)}`);
+  }
+  return fresh;
 }
 
 /* ─────────────────────────────────── Запуск ─────────────────────────────────── */
@@ -176,7 +249,9 @@ async function main() {
   }
 
   const release = await ensureRelease(tag, version, notes, draft);
+  await pruneAssets(release, assets);
   await uploadAssets(release, assets);
+  await verifyRelease(tag, assets);
 
   console.log(`\nГотово: ${release.html_url}`);
   console.log('Установленные копии подхватят обновление в течение 6 часов (или по кнопке «Проверить обновления»).');

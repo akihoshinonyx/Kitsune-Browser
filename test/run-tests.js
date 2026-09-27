@@ -1172,12 +1172,20 @@ test('32-битная сборка просит свой файл канала, 
 
   const fake = {
     autoUpdater: {
+      _channel: null,
       on() {},
-      channel: '',
+      get channel() {
+        return this._channel;
+      },
+      // Повторяем поведение electron-updater: установка канала включает откат
+      set channel(value) {
+        this._channel = value;
+        this.allowDowngrade = true;
+      },
+      allowDowngrade: false,
       autoDownload: false,
       autoInstallOnAppQuit: false,
       allowPrerelease: true,
-      allowDowngrade: true,
       logger: null
     }
   };
@@ -1191,6 +1199,11 @@ test('32-битная сборка просит свой файл канала, 
     assert.strictEqual(x64.getState().supported, true, 'в собранном приложении движок должен загрузиться');
     assert.strictEqual(fake.autoUpdater.channel, 'latest');
     assert.strictEqual(fake.autoUpdater.autoDownload, true);
+    assert.strictEqual(
+      fake.autoUpdater.allowDowngrade,
+      false,
+      'канал выставляется до запрета отката: сеттер channel включает allowDowngrade'
+    );
 
     fake.autoUpdater.channel = '';
     const ia32 = createUpdater({ send: () => {}, settings: { get: () => true }, arch: 'ia32' });
@@ -1200,6 +1213,7 @@ test('32-битная сборка просит свой файл канала, 
       'win32',
       'app-update.yml не содержит channel, поэтому 32-битной сборке его надо задать в коде'
     );
+    assert.strictEqual(fake.autoUpdater.allowDowngrade, false);
     assert.strictEqual(ia32.getState().channel, 'win32');
     assert.strictEqual(ia32.getState().arch, 'ia32');
   } finally {
@@ -1321,6 +1335,14 @@ test('скрипт публикации создаёт релиз и замен�
   assert.ok(/releases\/assets\//.test(src), 'повторная публикация должна заменять файлы');
   assert.ok(/GH_TOKEN|GITHUB_TOKEN/.test(src));
   assert.ok(/RELEASE-NOTES\.md/.test(src), 'описание релиза берётся из документации');
+  assert.ok(
+    /IGNORED_ASSETS/.test(src) && /'builder-debug\.yml'/.test(src),
+    'отладочный builder-debug.yml не должен попадать в релиз'
+  );
+  assert.ok(
+    /function verifyRelease/.test(src) && /function pruneAssets/.test(src),
+    'после загрузки релиз должен проверяться и чиститься от лишних файлов'
+  );
 });
 
 test('workflow релиза публикует установщики по тегу', () => {
