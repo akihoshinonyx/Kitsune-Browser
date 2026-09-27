@@ -1,0 +1,54 @@
+{
+  "appId": "com.kitsune.browser",
+  "productName": "Kitsune Browser",
+  "copyright": "Copyright © 2026 Kitsune Project",
+  "asar": true,
+  "compression": "maximum",
+  "artifactName": "Kitsune-Browser-Setup-${version}-${arch}.${ext}",
+  "directories": {
+    "buildResources": "build"
+  },
+  "files": [
+    "src/**/*",
+    "package.json",
+    "README.md",
+    "!**/*.map"
+  ],
+  "win": {
+    "icon": "build/icon.ico",
+    "executableName": "Kitsune Browser",
+    "requestedExecutionLevel": "asInvoker",
+    "signtoolOptions": {
+      "publisherName": "Kitsune Project"
+    }
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowElevation": true,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Kitsune Browser",
+    "runAfterFinish": true,
+    "deleteAppDataOnUninstall": false,
+    "differentialPackage": true,
+    "include": "build/installer.nsh",
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico",
+    "installerHeaderIcon": "build/icon.ico",
+    "uninstallDisplayName": "Kitsune Browser ${version}"
+  },
+  "portable": {
+    "artifactName": "Kitsune-Browser-Portable-${version}-${arch}.${ext}",
+    "requestExecutionLevel": "user"
+  },
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "akihoshinonyx",
+      "repo": "Kitsune-Browser",
+      "releaseType": "release"
+    }
+  ]
+}

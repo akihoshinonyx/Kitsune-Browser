@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>Статистика блокировок — Kitsune Browser</title>
+  <link rel="stylesheet" href="internal.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="page-title">Блокировка рекламы</h1>
+    <p class="page-sub">Что Kitsune не пустил на ваши страницы.</p>
+
+    <div class="card">
+      <div class="stat-grid">
+        <div class="stat">
+          <div class="stat-value" id="s-blocked">0</div>
+          <div class="stat-label">Запросов заблокировано (сессия)</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="s-page">0</div>
+          <div class="stat-label">На текущей странице</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="s-rules">0</div>
+          <div class="stat-label">Правил в списке</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="s-cosmetic">0</div>
+          <div class="stat-label">Правил скрытия элементов</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="s-state">вкл</div>
+          <div class="stat-label">Состояние блокировщика</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button class="btn" id="toggle">Выключить</button>
+        <button class="btn ghost" id="reload">Обновить страницу</button>
+        <button class="btn ghost" id="reset">Сбросить статистику</button>
+        <button class="btn ghost" id="settings">Настройки</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Свои правила</h2>
+      <div class="row">
+        <div>
+          <div class="row-label">Правило блокировки или скрытия</div>
+          <div class="row-hint">
+            Синтаксис uBlock Origin / Adblock Plus:
+            <span class="mono">||ads.example.com^</span>,
+            <span class="mono">example.com##.banner</span>,
+            <span class="mono">/ads.js$script,redirect=noopjs</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="user-rule" placeholder="||ads.example.com^" />
+          <button class="btn" id="add-user-rule">Добавить</button>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Добавленные правила</div>
+          <div class="row-hint" id="user-rule-status">—</div>
+        </div>
+        <button class="btn ghost" id="pick-element">Заблокировать элемент на странице</button>
+      </div>
+      <div class="user-rules" id="user-rules"></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Сайт и списки</h2>
+      <div class="row">
+        <div>
+          <div class="row-label" id="site-label">Текущий сайт</div>
+          <div class="row-hint">Блокировку можно выключить для одного сайта — если он ломается.</div>
+        </div>
+        <button class="btn ghost" id="toggle-site">Отключить на этом сайте</button>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Подробные списки (EasyList, EasyPrivacy)</div>
+          <div class="row-hint" id="lists-status">
+            Расширяют блокировку до уровня uBlock Origin, но добавляют около 100 000 правил.
+          </div>
+        </div>
+        <button class="btn ghost" id="update-lists">Скачать списки</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Топ заблокированных доменов</h2>
+      <div class="bar-list" id="hosts"></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Последние заблокированные запросы</h2>
+      <div class="recent-list" id="recent"></div>
+    </div>
+  </div>
+
+  <script src="internal.js"></script>
+</body>
+</html>

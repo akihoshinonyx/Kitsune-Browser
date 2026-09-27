@@ -1,0 +1,80 @@
+name: Release
+
+# Сборка и публикация установщиков Kitsune Browser.
+#
+# Запускается автоматически на тег вида v1.0.0:
+#     git tag v1.0.0 && git push origin v1.0.0
+# либо вручную из вкладки Actions (workflow_dispatch) — тогда тег берётся из
+# поля ввода или собирается из версии в package.json.
+#
+# Что попадает в релиз:
+#   • Kitsune-Browser-Setup-<версия>-x64.exe     — 64-битный установщик (NSIS);
+#   • Kitsune-Browser-Setup-<версия>-ia32.exe    — 32-битный установщик (NSIS);
+#   • Kitsune-Browser-Portable-<версия>-*.exe    — portable-сборки;
+#   • latest.yml (x64) и win32.yml (ia32)        — файлы автообновления;
+#   • *.blockmap                                 — для дифференциальных обновлений;
+#   • SHA256SUMS.txt, build-info.json            — контрольные суммы и манифест.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Тег релиза (например v1.0.0). Пусто — версия из package.json'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: Собрать и опубликовать
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Зависимости
+        run: npm ci
+
+      - name: Иконки
+        run: npm run icon
+
+      - name: Тесты
+        run: npm test
+
+      - name: Тег релиза
+        id: tag
+        shell: pwsh
+        run: |
+          $tag = '${{ github.event.inputs.tag }}'
+          if (-not $tag) { $tag = '${{ github.ref_name }}' }
+          if ($tag -notmatch '^v\d') {
+            $tag = 'v' + (Get-Content package.json -Raw | ConvertFrom-Json).version
+          }
+          Write-Host "Тег: $tag"
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Сборка установщиков (x64 + ia32)
+        run: npm run dist
+
+      - name: Публикация в GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tools/publish-release.js --tag ${{ steps.tag.outputs.tag }}
+
+      - name: Артефакты сборки (на случай отладки)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kitsune-installers
+          path: |
+            release/x64/*.exe
+            release/ia32/*.exe
+            release/SHA256SUMS.txt
+          if-no-files-found: ignore

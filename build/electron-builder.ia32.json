@@ -1,0 +1,28 @@
+{
+  "extends": "build/electron-builder.base.json",
+  "electronVersion": "43.7.5",
+  "directories": {
+    "output": "release/ia32"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["ia32"]
+      },
+      {
+        "target": "portable",
+        "arch": ["ia32"]
+      }
+    ]
+  },
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "akihoshinonyx",
+      "repo": "Kitsune-Browser",
+      "releaseType": "release",
+      "channel": "win32"
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>О Kitsune Browser</title>
+  <link rel="stylesheet" href="internal.css" />
+  <style>
+    .about-head { display: flex; align-items: center; gap: 18px; margin-bottom: 22px; }
+    .about-logo { width: 68px; height: 68px; color: var(--accent); flex: 0 0 68px; }
+    .about-logo path, .about-logo circle { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+    .about-ver { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="about-head">
+      <svg class="about-logo" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M6 4 L11 11 L16 8 L21 11 L26 4 L26 17 C26 24 21.5 28 16 28 C10.5 28 6 24 6 17 Z" />
+        <circle cx="12.5" cy="17" r="1.7" />
+        <circle cx="19.5" cy="17" r="1.7" />
+      </svg>
+      <div>
+        <h1 class="page-title" style="margin:0;">Kitsune Browser</h1>
+        <div class="about-ver" id="ver">Версия —</div>
+      </div>
+    </div>
+
+    <p class="page-sub">
+      Быстрый и тихий браузер с настоящей блокировкой рекламы на уровне сети
+      и приватным поиском DuckDuckGo по умолчанию.
+    </p>
+
+    <div class="card">
+      <h2><span class="dot"></span> Среда выполнения</h2>
+      <div class="row"><div class="row-label">Kitsune Browser</div><span class="mono" id="v-app">—</span></div>
+      <div class="row"><div class="row-label">Electron</div><span class="mono" id="v-electron">—</span></div>
+      <div class="row"><div class="row-label">Chromium</div><span class="mono" id="v-chrome">—</span></div>
+      <div class="row"><div class="row-label">Node.js</div><span class="mono" id="v-node">—</span></div>
+      <div class="row"><div class="row-label">Платформа</div><span class="mono" id="v-platform">—</span></div>
+      <div class="row"><div class="row-label">Разрядность сборки</div><span class="mono" id="v-arch">—</span></div>
+      <div class="row"><div class="row-label">Канал обновлений</div><span class="mono" id="v-channel">—</span></div>
+      <div class="row"><div class="row-label">Установлено из</div><span class="mono" id="v-install">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Обновления</h2>
+      <div class="row">
+        <div>
+          <div class="row-label">Автообновление</div>
+          <div class="row-hint" id="v-update">—</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn ghost" id="v-check">Проверить обновления</button>
+          <button class="btn ghost" id="v-releases">Релизы на GitHub</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Блокировка рекламы</h2>
+      <div class="row"><div class="row-label">Движок</div><span class="mono">Kitsune AdBlock (ABP-совместимый)</span></div>
+      <div class="row"><div class="row-label">Правил загружено</div><span class="mono" id="v-rules">—</span></div>
+      <div class="row"><div class="row-label">Заблокировано за сессию</div><span class="mono" id="v-blocked">—</span></div>
+      <div class="row">
+        <div>
+          <div class="row-label">Свои списки фильтров</div>
+          <div class="row-hint">Положите <span class="mono">*.txt</span> в папку <span class="mono" id="v-filters">userData/filters</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Внутренние страницы</h2>
+      <div class="row"><div class="row-label">Новая вкладка</div><a href="kitsune://home" id="l-home" class="mono">kitsune://home</a></div>
+      <div class="row"><div class="row-label">Настройки</div><a href="kitsune://settings" id="l-settings" class="mono">kitsune://settings</a></div>
+      <div class="row"><div class="row-label">Статистика блокировок</div><a href="kitsune://blocked" id="l-blocked" class="mono">kitsune://blocked</a></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Приватность</h2>
+      <div class="row">
+        <div>
+          <div class="row-label">Никакой телеметрии</div>
+          <div class="row-hint">Kitsune не отправляет статистику использования никуда. История и закладки хранятся локально в виде JSON.</div>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Поиск DuckDuckGo</div>
+          <div class="row-hint">Запросы идут напрямую в DuckDuckGo — без проксирования через сторонние сервисы.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="internal.js"></script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self'" />
+  <title>Kitsune Browser</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ══════════════ Полоса вкладок ══════════════ -->
+  <div id="tabstrip" class="tabstrip">
+    <div class="brand" title="Kitsune Browser">
+      <svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M6 4 L11 11 L16 8 L21 11 L26 4 L26 17 C26 24 21.5 28 16 28 C10.5 28 6 24 6 17 Z" />
+        <circle cx="12.5" cy="17" r="1.7" />
+        <circle cx="19.5" cy="17" r="1.7" />
+      </svg>
+    </div>
+    <div id="tabs" class="tabs"></div>
+    <button id="new-tab" class="tab-new" title="Новая вкладка (Ctrl+T)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
+    </button>
+    <div class="window-controls">
+      <button id="win-min" class="win-btn" title="Свернуть"><svg viewBox="0 0 12 12"><path d="M2 6h8" /></svg></button>
+      <button id="win-max" class="win-btn" title="Развернуть"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1" /></svg></button>
+      <button id="win-close" class="win-btn win-close" title="Закрыть"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" /></svg></button>
+    </div>
+  </div>
+
+  <!-- ══════════════ Тулбар ══════════════ -->
+  <div id="toolbar" class="toolbar">
+    <button id="nav-back" class="icon-btn" title="Назад (Alt+Left)" disabled>
+      <svg viewBox="0 0 20 20"><path d="M12.5 4.5 7 10l5.5 5.5" /></svg>
+    </button>
+    <button id="nav-forward" class="icon-btn" title="Вперёд (Alt+Right)" disabled>
+      <svg viewBox="0 0 20 20"><path d="M7.5 4.5 13 10l-5.5 5.5" /></svg>
+    </button>
+    <button id="nav-reload" class="icon-btn" title="Обновить (Ctrl+R)">
+      <svg viewBox="0 0 20 20"><path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9" /><path d="M15.7 3.5v3.2h-3.2" /></svg>
+    </button>
+    <button id="nav-home" class="icon-btn" title="Домашняя страница">
+      <svg viewBox="0 0 20 20"><path d="M3.5 9.5 10 4l6.5 5.5" /><path d="M5.5 9v7h9V9" /></svg>
+    </button>
+
+    <div id="omnibox" class="omnibox">
+      <span id="site-security" class="site-icon" title="Соединение защищено">
+        <svg viewBox="0 0 16 16"><path d="M8 1.8 13 4v4c0 3.2-2.2 5.4-5 6.2-2.8-.8-5-3-5-6.2V4z" /></svg>
+      </span>
+      <input id="address" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Поиск в DuckDuckGo или адрес сайта" />
+      <button id="adblock-badge" class="adblock-badge" title="Блокировка рекламы включена">
+        <svg viewBox="0 0 16 16"><path d="M8 1.8 13 4v4c0 3.2-2.2 5.4-5 6.2-2.8-.8-5-3-5-6.2V4z" /><path d="M6 8.2 7.4 9.6 10.2 6.6" /></svg>
+        <span id="adblock-count">0</span>
+      </button>
+      <button id="bookmark-star" class="icon-btn small" title="Добавить в закладки">
+        <svg viewBox="0 0 20 20"><path d="M10 3.5l2 4.1 4.5.6-3.3 3.2.8 4.5L10 13.8l-4 2.1.8-4.5L3.5 8.2l4.5-.6z" /></svg>
+      </button>
+      <div id="suggestions" class="suggestions hidden"></div>
+    </div>
+
+    <button id="zoom-badge" class="zoom-badge hidden" title="Масштаб страницы">100%</button>
+    <button id="menu-button" class="icon-btn" title="Меню Kitsune">
+      <svg viewBox="0 0 20 20"><path d="M4 6h12M4 10h12M4 14h12" /></svg>
+    </button>
+  </div>
+
+  <!-- ══════════════ Поиск на странице ══════════════ -->
+  <div id="findbar" class="findbar hidden">
+    <input id="find-input" type="text" placeholder="Найти на странице" />
+    <span id="find-result" class="find-result"></span>
+    <button id="find-prev" class="icon-btn small" title="Предыдущее"><svg viewBox="0 0 20 20"><path d="M6 12l4-4 4 4" /></svg></button>
+    <button id="find-next" class="icon-btn small" title="Следующее"><svg viewBox="0 0 20 20"><path d="M6 8l4 4 4-4" /></svg></button>
+    <button id="find-close" class="icon-btn small" title="Закрыть"><svg viewBox="0 0 20 20"><path d="M6 6l8 8M14 6l-8 8" /></svg></button>
+  </div>
+
+  <!-- ══════════════ Боковая панель ══════════════ -->
+  <div id="sidebar" class="sidebar hidden">
+    <div class="sidebar-head">
+      <div class="sidebar-tabs">
+        <button id="sb-tab-history" class="sb-tab active">История</button>
+        <button id="sb-tab-bookmarks" class="sb-tab">Закладки</button>
+      </div>
+      <button id="sb-close" class="icon-btn small" title="Закрыть панель"><svg viewBox="0 0 20 20"><path d="M6 6l8 8M14 6l-8 8" /></svg></button>
+    </div>
+    <input id="sb-search" class="sb-search" type="text" placeholder="Поиск по списку..." />
+    <div id="sb-list" class="sb-list"></div>
+    <div class="sidebar-foot">
+      <button id="sb-clear" class="sb-clear">Очистить историю</button>
+    </div>
+  </div>
+
+  <!-- ══════════════ Прогресс и уведомления ══════════════ -->
+  <div id="progress" class="progress hidden"><div id="progress-bar" class="progress-bar"></div></div>
+
+  <!-- Полоса обновления. Живёт в нижней части окна, поэтому UI-слой заранее
+       резервирует под неё место у вкладки (TabManager.setInsets) — иначе
+       нативная страница перекрыла бы её. -->
+  <div id="update-banner" class="update-banner hidden">
+    <svg class="update-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M10 3.5v8.5" />
+      <path d="M6.4 8.6 10 12.2l3.6-3.6" />
+      <path d="M4 15.5h12" />
+    </svg>
+    <div class="update-body">
+      <span id="update-text" class="update-text"></span>
+      <div id="update-progress" class="update-progress hidden"><div id="update-bar" class="update-bar"></div></div>
+    </div>
+    <button id="update-action" class="update-btn">Перезапустить и обновить</button>
+    <button id="update-close" class="icon-btn small" title="Скрыть уведомление">
+      <svg viewBox="0 0 20 20"><path d="M6 6l8 8M14 6l-8 8" /></svg>
+    </button>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="../shared/constants.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

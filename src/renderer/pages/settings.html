@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>Настройки — Kitsune Browser</title>
+  <link rel="stylesheet" href="internal.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="page-title">Настройки</h1>
+    <p class="page-sub">Изменения применяются сразу и сохраняются автоматически.</p>
+
+    <div class="card">
+      <h2><span class="dot"></span> Поиск</h2>
+      <div class="row">
+        <div>
+          <div class="row-label">Поисковая система</div>
+          <div class="row-hint">По умолчанию используется DuckDuckGo — приватный поиск без отслеживания.</div>
+        </div>
+        <select id="search-engine"></select>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Безопасный поиск</div>
+          <div class="row-hint">Фильтрация результатов для взрослых.</div>
+        </div>
+        <select id="safe-search">
+          <option value="off">Выключен</option>
+          <option value="moderate">Умеренный</option>
+          <option value="strict">Строгий</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Блокировка рекламы и трекеров</h2>
+      <div class="row">
+        <div>
+          <div class="row-label">Блокировать рекламу и трекеры</div>
+          <div class="row-hint" id="adblock-rules">Загружено правил: —</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="adblock-enabled" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Блокировать всплывающие окна</div>
+          <div class="row-hint">Всплывающие окна открываются как обычные вкладки.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="block-popups" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Своё правило блокировки</div>
+          <div class="row-hint">Синтаксис Adblock Plus: <span class="mono">||ads.example.com^</span> или <span class="mono">/banner/*.gif</span></div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="custom-rule" placeholder="||ads.example.com^" />
+          <button class="btn" id="add-rule">Добавить</button>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Статистика</div>
+          <div class="row-hint">Всего заблокировано запросов в этой сессии: <b id="blocked-total">0</b></div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn ghost" id="open-blocklist">Подробнее</button>
+          <button class="btn ghost" id="reset-stats">Сбросить</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Менеджер паролей</h2>
+      <div class="row">
+        <div>
+          <div class="row-label">Предлагать сохранять пароли</div>
+          <div class="row-hint">После отправки формы входа Kitsune спросит, сохранить ли пароль.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="save-passwords" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Автозаполнение форм входа</div>
+          <div class="row-hint">Подставлять сохранённые логин и пароль на знакомых сайтах.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="autofill-passwords" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Сохранённые входы</div>
+          <div class="row-hint" id="passwords-info">Хранилище пустое.</div>
+        </div>
+        <button class="btn ghost" id="open-passwords">Открыть менеджер паролей</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Запуск и внешний вид</h2>
+      <div class="row">
+        <div>
+          <div class="row-label">Домашняя страница</div>
+          <div class="row-hint">Например: <span class="mono">kitsune://home</span> или <span class="mono">https://duckduckgo.com</span></div>
+        </div>
+        <input type="text" id="home-page" />
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Восстанавливать вкладки при запуске</div>
+          <div class="row-hint">Открывать те же вкладки, что были при закрытии.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="restore-tabs" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Не оставлять окно пустым</div>
+          <div class="row-hint">При закрытии последней вкладки сразу открывать стартовую страницу, а не пустое окно.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="close-last-tab" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Горячие клавиши</h2>
+      <p class="row-hint" style="padding: 0 16px 6px;">Комбинации работают в любом месте окна, в том числе когда фокус находится внутри страницы.</p>
+      <div class="row"><div class="row-label">Новая вкладка</div><span class="kbd">Ctrl + T</span></div>
+      <div class="row"><div class="row-label">Закрыть вкладку</div><span class="kbd">Ctrl + W</span></div>
+      <div class="row"><div class="row-label">Переоткрыть закрытую вкладку</div><span class="kbd">Ctrl + Shift + T</span></div>
+      <div class="row"><div class="row-label">Адресная строка</div><span class="kbd">Ctrl + L / Alt + D</span></div>
+      <div class="row"><div class="row-label">Поиск на странице</div><span class="kbd">Ctrl + F</span></div>
+      <div class="row"><div class="row-label">Обновить / без кэша</div><span class="kbd">Ctrl + R / Ctrl + Shift + R</span></div>
+      <div class="row"><div class="row-label">Следующая / предыдущая вкладка</div><span class="kbd">Ctrl + Tab / Ctrl + Shift + Tab</span></div>
+      <div class="row"><div class="row-label">Вкладка по номеру</div><span class="kbd">Ctrl + 1 … Ctrl + 9</span></div>
+      <div class="row"><div class="row-label">Масштаб страницы</div><span class="kbd">Ctrl + «+» / Ctrl + «−» / Ctrl + 0</span></div>
+      <div class="row"><div class="row-label">История / закладки</div><span class="kbd">Ctrl + H / Ctrl + J</span></div>
+      <div class="row"><div class="row-label">Добавить в закладки</div><span class="kbd">Ctrl + D</span></div>
+      <div class="row"><div class="row-label">Инструменты разработчика</div><span class="kbd">F12</span></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Обновления</h2>
+      <div class="row">
+        <div>
+          <div class="row-label">Версия и канал</div>
+          <div class="row-hint" id="update-info">Проверяем данные о сборке…</div>
+        </div>
+        <button class="btn" id="check-updates">Проверить обновления</button>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Проверять обновления автоматически</div>
+          <div class="row-hint">Kitsune сам спрашивает GitHub Releases и скачивает новую версию в фоне — установка по кнопке «Перезапустить».</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="auto-update" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-label">Состояние</div>
+          <div class="row-hint" id="update-notes">Проверка ещё не выполнялась.</div>
+        </div>
+        <button class="btn ghost" id="open-releases">Страница релизов</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span> Данные</h2>
+      <div class="row">
+        <div>
+          <div class="row-label">Сбросить все настройки</div>
+          <div class="row-hint">История и закладки останутся на месте.</div>
+        </div>
+        <button class="btn danger" id="reset-settings">Сбросить настройки</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="internal.js"></script>
+</body>
+</html>

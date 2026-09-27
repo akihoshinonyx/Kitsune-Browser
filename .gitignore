@@ -1,0 +1,27 @@
+# Зависимости (ставятся через npm ci)
+node_modules/
+
+# Результаты сборки установщиков
+release/
+dist/
+out/
+
+# Артефакты дымового теста (скриншоты)
+build/smoke/
+build/builder-debug.yml
+build/builder-effective-config.yaml
+
+# Логи и мусор редакторов
+*.log
+out.txt
+smoke.txt
+pack.txt
+asar.txt
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Иконки генерируются `npm run icon`, но лежат в репозитории —
+# без них не собирается установщик, поэтому build/icon.* НЕ игнорируются.

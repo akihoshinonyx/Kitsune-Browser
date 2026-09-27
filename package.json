@@ -1,0 +1,40 @@
+{
+  "name": "kitsune-browser",
+  "productName": "Kitsune Browser",
+  "version": "1.0.0",
+  "description": "Kitsune Browser - быстрый браузер с блокировкой рекламы уровня uBlock Origin, менеджером паролей и приватным поиском DuckDuckGo",
+  "main": "src/main/main.js",
+  "author": "Kitsune Project",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akihoshinonyx/Kitsune-Browser.git"
+  },
+  "homepage": "https://github.com/akihoshinonyx/Kitsune-Browser#readme",
+  "bugs": {
+    "url": "https://github.com/akihoshinonyx/Kitsune-Browser/issues"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "icon": "node tools/make-icon.js",
+    "test": "node test/run-tests.js",
+    "smoke": "electron tools/smoke-test.js",
+    "diagnostics": "electron . --kitsune-diagnostics",
+    "pack": "electron-builder --config build/electron-builder.x64.json --dir --publish never",
+    "dist:win64": "electron-builder --config build/electron-builder.x64.json --win --x64 --publish never",
+    "dist:win32": "electron-builder --config build/electron-builder.ia32.json --win --ia32 --publish never",
+    "dist": "node tools/build-installers.js",
+    "publish:release": "node tools/publish-release.js",
+    "release": "npm run dist && node tools/publish-release.js"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}
+
