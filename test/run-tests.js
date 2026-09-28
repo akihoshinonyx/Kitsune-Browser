@@ -1142,10 +1142,26 @@ test('активной считается только прикреплённа�
   assert.ok(/!t\.view\.webContents\.isDestroyed\(\)/.test(src));
 });
 
-test('версия 1.3.0 синхронизирована', () => {
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.3.0');
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.3.0');
-  assert.strictEqual(require('../src/shared/version').VERSION, '1.3.0');
+test('версия 1.3.1 синхронизирована', () => {
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.3.1');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.3.1');
+  assert.strictEqual(require('../src/shared/version').VERSION, '1.3.1');
+});
+
+test('чувствительные разрешения сайтов не выдаются автоматически', () => {
+  const main = readMain();
+  assert.ok(/setPermissionRequestHandler/.test(main));
+  assert.ok(!/allowed\s*=\s*\[[^\]]*geolocation/.test(main));
+  assert.ok(!/allowed\s*=\s*\[[^\]]*notifications/.test(main));
+  assert.ok(/clipboard-sanitized-write/.test(main));
+});
+
+test('popup-ссылки остаются под управлением вкладок Kitsune', () => {
+  const tabs = readTabs();
+  assert.ok(/setWindowOpenHandler/.test(tabs));
+  assert.ok(/return \{ action: 'deny' \}/.test(tabs));
+  assert.ok(/this\.create\(\{ url, background: disposition === 'background-tab' \}\)/.test(tabs));
+  assert.ok(!/return \{ action: 'allow' \}/.test(tabs));
 });
 
 test('интеграция браузера по умолчанию зарегистрирована безопасно', () => {

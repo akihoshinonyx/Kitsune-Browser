@@ -118,9 +118,13 @@ function setupSession() {
     callback({ requestHeaders: headers });
   });
 
-  // ── Запрет нежелательных схем и всплывающих окон ──
-  ses.setPermissionRequestHandler((wc, permission, callback) => {
-    const allowed = ['fullscreen', 'clipboard-sanitized-write', 'media', 'geolocation', 'notifications'];
+  // ── Разрешения сайтов ──
+  // Не выдаём геолокацию и уведомления автоматически: это чувствительные
+  // разрешения, которые должны быть явно подтверждены пользователем в UI.
+  // Без этого любой сайт мог незаметно получить доступ к местоположению или
+  // заспамить системными уведомлениями.
+  ses.setPermissionRequestHandler((_wc, permission, callback) => {
+    const allowed = ['fullscreen', 'clipboard-sanitized-write', 'media'];
     callback(allowed.includes(permission));
   });
 

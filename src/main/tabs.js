@@ -238,11 +238,14 @@ class TabManager extends EventEmitter {
         this.ctx.adblock.recordBlocked({ tabId: id, url, type: 'popup' });
         return { action: 'deny' };
       }
-      if (this.settings.blockPopups) {
+      // Не разрешаем Chromium создавать отдельные BrowserWindow для сайта:
+      // такое окно обходит управление вкладками, preload и жизненный цикл
+      // Kitsune. Даже при выключенной блокировке popup открываем ссылку в
+      // обычной вкладке браузера.
+      if (!this.settings.blockPopups) {
         this.create({ url, background: disposition === 'background-tab' });
-        return { action: 'deny' };
       }
-      return { action: 'allow' };
+      return { action: 'deny' };
     });
 
     wc.on('enter-html-full-screen', () => {
