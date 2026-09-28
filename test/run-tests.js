@@ -1152,10 +1152,10 @@ test('активной считается только прикреплённа�
   assert.ok(/!t\.view\.webContents\.isDestroyed\(\)/.test(src));
 });
 
-test('версия 1.3.2 синхронизирована', () => {
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.3.2');
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.3.2');
-  assert.strictEqual(require('../src/shared/version').VERSION, '1.3.2');
+test('версия 1.3.3 синхронизирована', () => {
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.3.3');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.3.3');
+  assert.strictEqual(require('../src/shared/version').VERSION, '1.3.3');
 });
 
 test('TabManager получает SettingsStore, а не снимок настроек', () => {
