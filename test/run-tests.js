@@ -1142,10 +1142,19 @@ test('активной считается только прикреплённа�
   assert.ok(/!t\.view\.webContents\.isDestroyed\(\)/.test(src));
 });
 
-test('версия 1.2.1 синхронизирована', () => {
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.2.1');
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.2.1');
-  assert.strictEqual(require('../src/shared/version').VERSION, '1.2.1');
+test('версия 1.3.0 синхронизирована', () => {
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.3.0');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.3.0');
+  assert.strictEqual(require('../src/shared/version').VERSION, '1.3.0');
+});
+
+test('интеграция браузера по умолчанию зарегистрирована безопасно', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src/main/main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'src/preload/preload.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/pages/settings.html'), 'utf8');
+  assert.ok(/default-browser:state/.test(main) && /ms-settings:defaultapps/.test(main));
+  assert.ok(/defaultBrowser/.test(preload) && /default-browser-status/.test(html));
+  assert.ok(/getApplicationNameForProtocol\('http:'\)/.test(main));
 });
 
 test('история закрывается кнопкой, а загрузки доступны из тулбара', () => {

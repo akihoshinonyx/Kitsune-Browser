@@ -143,6 +143,21 @@ async function initSettings() {
   const rulesEl = document.getElementById('adblock-rules');
   const totalEl = document.getElementById('blocked-total');
   const pwInfo = document.getElementById('passwords-info');
+  const defaultBrowserStatus = document.getElementById('default-browser-status');
+  const defaultBrowserButton = document.getElementById('default-browser-button');
+
+  async function refreshDefaultBrowser() {
+    const state = await api.defaultBrowser.state();
+    if (!state || !state.supported) {
+      defaultBrowserStatus.textContent = 'Эта функция доступна только в Windows.';
+      defaultBrowserButton.disabled = true;
+      return;
+    }
+    defaultBrowserStatus.textContent = state.current
+      ? 'Kitsune уже выбран браузером по умолчанию.'
+      : 'Kitsune пока не выбран браузером по умолчанию. Windows попросит подтвердить выбор.';
+    defaultBrowserButton.textContent = state.current ? 'Изменить в Windows' : 'Сделать браузером по умолчанию';
+  }
 
   function fill(s) {
     refs.engine.value = s.searchEngine;
@@ -180,6 +195,7 @@ async function initSettings() {
   fill(settings);
   await refreshStats();
   await refreshPasswords();
+  await refreshDefaultBrowser();
 
   refs.engine.addEventListener('change', () => save({ searchEngine: refs.engine.value }));
   refs.safe.addEventListener('change', () => save({ safeSearch: refs.safe.value }));
@@ -199,6 +215,10 @@ async function initSettings() {
   document
     .getElementById('open-passwords')
     .addEventListener('click', () => api.tabs.navigate('kitsune://passwords'));
+  defaultBrowserButton.addEventListener('click', async () => {
+    await api.defaultBrowser.openSettings();
+    defaultBrowserStatus.textContent = 'Выберите Kitsune для HTTP, HTTPS и HTML в открывшемся окне Windows.';
+  });
 
   const ruleInput = document.getElementById('custom-rule');
   const addRule = async () => {

@@ -18,16 +18,16 @@ Kitsune Browser — настольный браузер на Electron с нас�
 
 | Система | Файл из релиза |
 |---|---|
-| Windows 10/11, 64-битная | `Kitsune-Browser-Setup-1.0.0-x64.exe` |
-| Windows 10, 32-битная | `Kitsune-Browser-Setup-1.0.0-ia32.exe` |
-| Без установки (флешка) | `Kitsune-Browser-Portable-1.0.0-<арх>.exe` |
+| Windows 10/11, 64-битная | `Kitsune-Browser-Setup-1.3.0-x64.exe` |
+| Windows 10, 32-битная | `Kitsune-Browser-Setup-1.3.0-ia32.exe` |
+| Без установки (флешка) | `Kitsune-Browser-Portable-1.3.0-<арх>.exe` |
 
 ```powershell
 # обычная установка: мастер, ярлык на рабочем столе, меню «Пуск», запись в «Установка и удаление программ»
-.\Kitsune-Browser-Setup-1.0.0-x64.exe
+.\Kitsune-Browser-Setup-1.3.0-x64.exe
 
 # тихая установка для скриптов
-.\Kitsune-Browser-Setup-1.0.0-x64.exe /S
+.\Kitsune-Browser-Setup-1.3.0-x64.exe /S
 
 # установка скриптом из собранной папки (без установщика)
 powershell -ExecutionPolicy Bypass -File .\tools\install.ps1 -Run

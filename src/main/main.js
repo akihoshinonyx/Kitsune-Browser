@@ -1221,8 +1221,29 @@ function appInfo() {
     passwords: {
       count: passwords ? passwords.count : 0,
       secure: passwords ? passwords.secure : false
-    }
+    },
+    defaultBrowser: defaultBrowserState()
   };
+}
+
+/** Проверяет назначение HTTP: Windows может менять его только через системный UI. */
+function defaultBrowserState() {
+  if (process.platform !== 'win32') {
+    return { supported: false, current: false, reason: 'Windows only' };
+  }
+  try {
+    const application = app.getApplicationNameForProtocol('http:');
+    return { supported: true, current: application === APP_NAME, application: application || '' };
+  } catch {
+    return { supported: true, current: false, application: '' };
+  }
+}
+
+function openIncomingUrls(args) {
+  const urls = (args || []).filter((value) => /^https?:\/\//i.test(String(value)));
+  if (!urls.length || !tabs) return false;
+  for (const url of urls) tabs.navigate(tabs.activeId, String(url));
+  return true;
 }
 
 /** Локальные (закладки/история) + удалённые (DuckDuckGo) подсказки */
@@ -1410,6 +1431,12 @@ function registerIpcExtras() {
 
   // ── Прочее ──
   handle('shell:open-external', (_e, url) => shell.openExternal(url));
+  handle('default-browser:state', () => defaultBrowserState());
+  handle('default-browser:open-settings', () => {
+    if (process.platform !== 'win32') return false;
+    shell.openExternal('ms-settings:defaultapps');
+    return true;
+  });
   handle('window:minimize', () => mainWindow && mainWindow.minimize());
   handle('window:maximize', () => {
     if (!mainWindow) return false;
@@ -1570,11 +1597,12 @@ const gotLock = isDiagnosticsRun() ? true : app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, commandLine) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
-      tabs.create();
+      openIncomingUrls(commandLine);
+      if (!commandLine.some((value) => /^https?:\/\//i.test(String(value)))) tabs.create();
     }
   });
 
@@ -1592,6 +1620,7 @@ if (!gotLock) {
     }
 
     bootstrap();
+    openIncomingUrls(process.argv);
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) bootstrap();
     });

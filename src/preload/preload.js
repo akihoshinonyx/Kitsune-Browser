@@ -127,6 +127,12 @@ function exposeBrowserApi() {
       openReleases: () => invoke('updater:open-releases')
     },
 
+    /* ── Интеграция с Windows ── */
+    defaultBrowser: {
+      state: () => invoke('default-browser:state'),
+      openSettings: () => invoke('default-browser:open-settings')
+    },
+
     /* ── История ── */
     history: {
       list: (options) => invoke('history:list', options || {}),
