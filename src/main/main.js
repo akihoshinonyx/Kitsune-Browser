@@ -44,6 +44,90 @@ let quitting = false;
 let sessionRestored = false;
 let findInPageQuery = '';
 
+// Разрешения «только в этот раз» живут только до закрытия вкладки.
+const temporarySitePermissions = new Map();
+const pendingPermissionRequests = new Map();
+const SENSITIVE_PERMISSIONS = new Set(['geolocation', 'media']);
+
+function permissionOrigin(url) {
+  try {
+    const parsed = new URL(String(url));
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    return parsed.origin;
+  } catch {
+    return '';
+  }
+}
+
+function mediaPermissionNames(details) {
+  const types = details && Array.isArray(details.mediaTypes) ? details.mediaTypes : [];
+  const names = [];
+  if (!types.length || types.includes('audio')) names.push('microphone');
+  if (!types.length || types.includes('video')) names.push('camera');
+  return names;
+}
+
+function permissionNames(permission, details) {
+  return permission === 'media' ? mediaPermissionNames(details) : [permission];
+}
+
+function permissionTitle(names) {
+  return names.map((name) => ({
+    geolocation: 'геолокации',
+    microphone: 'микрофону',
+    camera: 'вебкамере'
+  }[name] || name)).join(' и ');
+}
+
+function permissionSetFor(map, origin) {
+  return new Set(Array.isArray(map && map[origin]) ? map[origin] : []);
+}
+
+function hasSitePermission(origin, names, wcId) {
+  const permanent = permissionSetFor(settings.get('sitePermissions', {}), origin);
+  const temporary = temporarySitePermissions.get(wcId) || new Set();
+  return names.every((name) => permanent.has(name) || temporary.has(`${origin}:${name}`));
+}
+
+function rememberSitePermission(origin, names, wcId, permanent) {
+  if (permanent) {
+    const grants = settings.get('sitePermissions', {});
+    const current = permissionSetFor(grants, origin);
+    names.forEach((name) => current.add(name));
+    grants[origin] = [...current].sort();
+    settings.set('sitePermissions', grants);
+    return;
+  }
+  const current = temporarySitePermissions.get(wcId) || new Set();
+  names.forEach((name) => current.add(`${origin}:${name}`));
+  temporarySitePermissions.set(wcId, current);
+}
+
+async function askSitePermission(wc, origin, names) {
+  const key = `${wc.id}:${origin}:${names.slice().sort().join(',')}`;
+  if (pendingPermissionRequests.has(key)) return pendingPermissionRequests.get(key);
+  if (typeof wc.once === 'function') {
+    wc.once('destroyed', () => temporarySitePermissions.delete(wc.id));
+  }
+  const request = (async () => {
+    if (!mainWindow || mainWindow.isDestroyed() || wc.isDestroyed()) return 'deny';
+    const site = new URL(origin).hostname;
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      title: 'Разрешение сайта',
+      message: `${site} запрашивает доступ к ${permissionTitle(names)}.`,
+      detail: 'Разрешение «только в этот раз» действует до закрытия вкладки. Доверять сайту постоянно можно будет отменить в настройках.',
+      buttons: ['Только в этот раз', 'Всегда доверять этому сайту', 'Запретить'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true
+    });
+    return result.response === 0 ? 'once' : result.response === 1 ? 'always' : 'deny';
+  })().finally(() => pendingPermissionRequests.delete(key));
+  pendingPermissionRequests.set(key, request);
+  return request;
+}
+
 /** Отправка события в UI-слой */
 function send(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -119,13 +203,28 @@ function setupSession() {
   });
 
   // ── Разрешения сайтов ──
-  // Не выдаём геолокацию и уведомления автоматически: это чувствительные
-  // разрешения, которые должны быть явно подтверждены пользователем в UI.
-  // Без этого любой сайт мог незаметно получить доступ к местоположению или
-  // заспамить системными уведомлениями.
-  ses.setPermissionRequestHandler((_wc, permission, callback) => {
-    const allowed = ['fullscreen', 'clipboard-sanitized-write', 'media'];
-    callback(allowed.includes(permission));
+  ses.setPermissionRequestHandler(async (wc, permission, callback, details) => {
+    const automatic = ['fullscreen', 'clipboard-sanitized-write'];
+    if (automatic.includes(permission)) return callback(true);
+    if (!SENSITIVE_PERMISSIONS.has(permission)) return callback(false);
+
+    const origin = permissionOrigin(details && details.requestingUrl);
+    const names = permissionNames(permission, details);
+    if (!origin || !names.length) return callback(false);
+    if (hasSitePermission(origin, names, wc.id)) return callback(true);
+
+    const decision = await askSitePermission(wc, origin, names);
+    if (decision === 'once' || decision === 'always') {
+      rememberSitePermission(origin, names, wc.id, decision === 'always');
+      return callback(true);
+    }
+    return callback(false);
+  });
+
+  ses.setPermissionCheckHandler((wc, permission, requestingOrigin, details) => {
+    if (!SENSITIVE_PERMISSIONS.has(permission)) return ['fullscreen', 'clipboard-sanitized-write'].includes(permission);
+    const names = permissionNames(permission, details);
+    return !!requestingOrigin && hasSitePermission(requestingOrigin, names, wc.id);
   });
 
   ses.setUserAgent(buildUserAgent());
@@ -1207,6 +1306,7 @@ function appInfo() {
     platform: process.platform,
     searchEngines: Object.values(SEARCH_ENGINES),
     settings: settings.settings,
+    sitePermissions: listSitePermissions(),
     adblock: {
       rules: adblock.rulesCount,
       enabled: adblock.enabled,
@@ -1304,6 +1404,20 @@ function registerIpcExtras() {
     send('settings:changed', settings.settings);
     tabs.emitState();
     return settings.settings;
+  });
+  handle('permissions:list', () => listSitePermissions());
+  handle('permissions:revoke', (_e, origin) => {
+    const grants = settings.get('sitePermissions', {});
+    if (!origin || typeof origin !== 'string') return listSitePermissions();
+    delete grants[origin];
+    settings.set('sitePermissions', grants);
+    send('permissions:changed', listSitePermissions());
+    return listSitePermissions();
+  });
+  handle('permissions:clear', () => {
+    settings.set('sitePermissions', {});
+    send('permissions:changed', []);
+    return [];
   });
 
   // ── Блокировщик ──
@@ -1552,7 +1666,7 @@ function bootstrap() {
   createWindow();
 
   tabs = new TabManager(mainWindow, {
-    settings,
+    settings: settings.settings,
     adblock,
     history,
     bookmarks,
@@ -1590,6 +1704,14 @@ function bootstrap() {
     sessionRestored = true;
     tabs.emitStateNow();
   });
+}
+
+function listSitePermissions() {
+  const grants = settings ? settings.get('sitePermissions', {}) : {};
+  return Object.entries(grants || {})
+    .filter(([, names]) => Array.isArray(names) && names.length)
+    .map(([origin, names]) => ({ origin, permissions: names.slice().sort() }))
+    .sort((a, b) => a.origin.localeCompare(b.origin));
 }
 
 app.setName(APP_NAME);

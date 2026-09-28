@@ -110,6 +110,17 @@
     </div>
 
     <div class="card">
+      <h2><span class="dot"></span> Разрешения сайтов</h2>
+      <p class="row-hint" style="margin: 0 0 12px;">Геолокация, микрофон и вебкамера запрашиваются отдельно. Выбор «Только в этот раз» не сохраняется после закрытия вкладки.</p>
+      <div id="site-permissions" class="permission-list"></div>
+      <div class="row" id="permissions-empty"><div class="empty">Постоянных разрешений нет.</div></div>
+      <div class="row">
+        <div><div class="row-label">Удалить все постоянные разрешения</div><div class="row-hint">При следующем запросе сайт снова попросит доступ.</div></div>
+        <button class="btn danger" id="clear-permissions">Удалить все</button>
+      </div>
+    </div>
+
+    <div class="card">
       <h2><span class="dot"></span> Запуск и внешний вид</h2>
       <div class="row">
         <div>

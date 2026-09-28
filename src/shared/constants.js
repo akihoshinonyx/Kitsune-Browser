@@ -20,7 +20,7 @@
   const APP_SHORT_NAME = 'Kitsune';
   const APP_TAGLINE = 'Быстрый. Тихий. Без рекламы.';
   const APP_ID = 'com.kitsune.browser';
-  const APP_VERSION = '1.3.1';
+  const APP_VERSION = '1.3.2';
 
   /** Поисковые системы: основной поиск — DuckDuckGo */
   const SEARCH_ENGINES = {
@@ -72,7 +72,10 @@
     savePasswords: true,
     autofillPasswords: true,
     // Автообновление из GitHub Releases (проверка в фоне + установка по кнопке)
-    autoUpdate: true
+    autoUpdate: true,
+    // Постоянные разрешения сайтов. Заполняются только явным выбором
+    // пользователя «Всегда доверять этому сайту».
+    sitePermissions: {}
   };
 
   /** Внутренние страницы браузера */

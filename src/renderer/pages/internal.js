@@ -145,6 +145,31 @@ async function initSettings() {
   const pwInfo = document.getElementById('passwords-info');
   const defaultBrowserStatus = document.getElementById('default-browser-status');
   const defaultBrowserButton = document.getElementById('default-browser-button');
+  const permissionList = document.getElementById('site-permissions');
+  const permissionsEmpty = document.getElementById('permissions-empty');
+
+  async function refreshPermissions() {
+    const list = await api.permissions.list();
+    permissionList.textContent = '';
+    permissionsEmpty.classList.toggle('hidden', list.length > 0);
+    for (const item of list) {
+      const row = document.createElement('div');
+      row.className = 'permission-row';
+      const origin = document.createElement('span');
+      origin.className = 'permission-origin';
+      origin.textContent = item.origin;
+      origin.title = item.origin;
+      const names = document.createElement('span');
+      names.className = 'permission-names';
+      names.textContent = item.permissions.map((name) => ({ geolocation: 'геолокация', microphone: 'микрофон', camera: 'вебкамера' }[name] || name)).join(', ');
+      const revoke = document.createElement('button');
+      revoke.className = 'btn ghost';
+      revoke.textContent = 'Отозвать';
+      revoke.addEventListener('click', async () => { await api.permissions.revoke(item.origin); await refreshPermissions(); });
+      row.append(origin, names, revoke);
+      permissionList.appendChild(row);
+    }
+  }
 
   async function refreshDefaultBrowser() {
     const state = await api.defaultBrowser.state();
@@ -195,6 +220,7 @@ async function initSettings() {
   fill(settings);
   await refreshStats();
   await refreshPasswords();
+  await refreshPermissions();
   await refreshDefaultBrowser();
 
   refs.engine.addEventListener('change', () => save({ searchEngine: refs.engine.value }));
@@ -218,6 +244,10 @@ async function initSettings() {
   defaultBrowserButton.addEventListener('click', async () => {
     await api.defaultBrowser.openSettings();
     defaultBrowserStatus.textContent = 'Выберите Kitsune для HTTP, HTTPS и HTML в открывшемся окне Windows.';
+  });
+  document.getElementById('clear-permissions').addEventListener('click', async () => {
+    const ok = await api.confirm('Удалить разрешения', 'Отозвать все постоянные разрешения сайтов?');
+    if (ok) { await api.permissions.clear(); await refreshPermissions(); }
   });
 
   const ruleInput = document.getElementById('custom-rule');

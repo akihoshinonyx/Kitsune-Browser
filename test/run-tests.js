@@ -1142,10 +1142,20 @@ test('активной считается только прикреплённа�
   assert.ok(/!t\.view\.webContents\.isDestroyed\(\)/.test(src));
 });
 
-test('версия 1.3.1 синхронизирована', () => {
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.3.1');
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.3.1');
-  assert.strictEqual(require('../src/shared/version').VERSION, '1.3.1');
+test('версия 1.3.2 синхронизирована', () => {
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.3.2');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.3.2');
+  assert.strictEqual(require('../src/shared/version').VERSION, '1.3.2');
+});
+
+test('чувствительные разрешения требуют выбора пользователя и могут быть отозваны', () => {
+  const main = readMain();
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'src/preload/preload.js'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/pages/settings.html'), 'utf8');
+  assert.ok(/Только в этот раз/.test(main) && /Всегда доверять этому сайту/.test(main));
+  assert.ok(/geolocation/.test(main) && /media/.test(main) && /permissions:revoke/.test(main));
+  assert.ok(/permissions:\s*\{/.test(preload) && /site-permissions/.test(settings));
+  assert.ok(/destroyed.*temporarySitePermissions\.delete/.test(main));
 });
 
 test('чувствительные разрешения сайтов не выдаются автоматически', () => {

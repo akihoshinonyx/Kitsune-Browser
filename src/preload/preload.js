@@ -74,6 +74,11 @@ function exposeBrowserApi() {
       set: (patch) => invoke('settings:set', patch),
       reset: () => invoke('settings:reset')
     },
+    permissions: {
+      list: () => invoke('permissions:list'),
+      revoke: (origin) => invoke('permissions:revoke', origin),
+      clear: () => invoke('permissions:clear')
+    },
 
     /* ── Блокировщик рекламы ── */
     adblock: {
