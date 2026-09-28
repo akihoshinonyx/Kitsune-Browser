@@ -60,6 +60,9 @@ function friendlyError(err) {
   if (/403|rate limit|API rate/i.test(raw)) {
     return 'GitHub ограничил частоту запросов — попробуйте позже';
   }
+  if (/not signed by the application owner|publisherNames|signature.*(invalid|missing)/i.test(raw)) {
+    return 'Установщик не подписан сертификатом издателя. Скачайте обновление вручную с GitHub Releases';
+  }
   if (/404/.test(raw)) {
     return 'Релиз не найден на GitHub';
   }
@@ -159,8 +162,11 @@ function createUpdater({ send, settings, arch = process.arch }) {
       return null;
     }
 
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
+    // CI не подписывает NSIS-установщик. Не скачиваем его автоматически:
+    // electron-updater иначе скачает файл, а Windows отклонит его по publisherName.
+    // Пользователь получает ссылку на GitHub Releases и сам выбирает установщик.
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.allowPrerelease = false;
     // Канал задаём явно, и это обязательно: electron-builder кладёт в
     // app-update.yml только owner/repo/provider (поля channel там нет),
@@ -186,7 +192,7 @@ function createUpdater({ send, settings, arch = process.arch }) {
       patch({
         status: 'available',
         version: String((info && info.version) || ''),
-        message: `Найдена версия ${(info && info.version) || ''} — скачиваем…`,
+        message: `Найдена версия ${(info && info.version) || ''} — скачайте её со страницы релизов`,
         releaseNotes: extractNotes(info)
       });
       send('ui:toast', { text: `Доступно обновление ${state.version} — загружаем` });

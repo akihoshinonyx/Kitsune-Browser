@@ -1,7 +1,7 @@
 {
   "name": "kitsune-browser",
   "productName": "Kitsune Browser",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Kitsune Browser - быстрый браузер с блокировкой рекламы уровня uBlock Origin, менеджером паролей и приватным поиском DuckDuckGo",
   "main": "src/main/main.js",
   "author": "Kitsune Project",

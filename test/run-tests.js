@@ -1118,6 +1118,36 @@ test('полный API браузера недоступен обычным са
 
 /* ─────────────────────────── Автообновление ─────────────────────────── */
 
+suite('Загрузки и жизненный цикл вкладок');
+
+test('внутренняя страница загрузок подключена и защищена IPC', () => {
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'src/preload/preload.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src/main/main.js'), 'utf8');
+  const page = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/pages/downloads.html'), 'utf8');
+  assert.ok(/kitsune:\/\/downloads/.test(fs.readFileSync(path.join(__dirname, '..', 'src/shared/constants.js'), 'utf8')));
+  assert.ok(/downloads:list/.test(preload) && /downloads:open/.test(preload));
+  const downloads = fs.readFileSync(path.join(__dirname, '..', 'src/main/downloads.js'), 'utf8');
+  assert.ok(/will-download/.test(downloads));
+  assert.ok(/isTrustedSender/.test(downloads));
+  assert.ok(/download-list/.test(page));
+  assert.ok(/createDownloads/.test(main));
+});
+
+test('активной считается только прикреплённая и неуничтоженная вкладка', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src/main/tabs.js'), 'utf8');
+  assert.ok(/attached: false/.test(src));
+  assert.ok(/tab\.attached = true/.test(src));
+  assert.ok(/!tab\.attached.*webContents\.isDestroyed/.test(src));
+  assert.ok(/activeId: active \? active\.id : null/.test(src));
+  assert.ok(/!t\.view\.webContents\.isDestroyed\(\)/.test(src));
+});
+
+test('версия 1.2.0 синхронизирована', () => {
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.2.0');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.2.0');
+  assert.strictEqual(require('../src/shared/version').VERSION, '1.2.0');
+});
+
 suite('Автообновление из GitHub Releases');
 
 const readProject = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
@@ -1207,7 +1237,7 @@ test('32-битная сборка просит свой файл канала, 
     x64.loadModule();
     assert.strictEqual(x64.getState().supported, true, 'в собранном приложении движок должен загрузиться');
     assert.strictEqual(fake.autoUpdater.channel, 'latest');
-    assert.strictEqual(fake.autoUpdater.autoDownload, true);
+    assert.strictEqual(fake.autoUpdater.autoDownload, false);
     assert.strictEqual(
       fake.autoUpdater.allowDowngrade,
       false,

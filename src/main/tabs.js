@@ -119,7 +119,9 @@ class TabManager extends EventEmitter {
       blocked: 0,
       zoom: 0, // 0 = 100 %, значение хранится как "уровень" Chromium
       error: null,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      attached: false,
+      pip: { available: false, playing: false, inPip: false }
     };
 
     this.tabs.set(tab.id, tab);
@@ -127,6 +129,7 @@ class TabManager extends EventEmitter {
     this._attachEvents(tab);
 
     this.win.contentView.addChildView(view);
+    tab.attached = true;
     view.setVisible(false);
     view.setBackgroundColor('#ffffff');
 
@@ -382,7 +385,7 @@ class TabManager extends EventEmitter {
 
   activate(id) {
     const tab = this.tabs.get(id);
-    if (!tab) return;
+    if (!tab || !tab.attached || !tab.view || tab.view.webContents.isDestroyed()) return;
     // Уже активна — не перерисовываем UI зря (это же защищает перетаскивание
     // вкладок: перестройка DOM на mousedown ломала бы подсветку drag&drop)
     if (this.activeId === id) return;
@@ -395,7 +398,11 @@ class TabManager extends EventEmitter {
       this.ctx.send('window:html-fullscreen', { value: false });
     }
     for (const t of this.tabs.values()) {
-      t.view.setVisible(t.id === id);
+      const visible = t.id === id && t.attached && !t.view.webContents.isDestroyed();
+      t.view.setVisible(visible);
+      if (!visible && t.pip && !t.pip.inPip && !t.view.webContents.isDestroyed()) {
+        t.view.webContents.executeJavaScript('[...document.querySelectorAll("video")].forEach((v) => { if (!v.paused) v.pause(); })', false).catch(() => {});
+      }
     }
     this.activeId = id;
     this.layoutAll();
@@ -473,6 +480,7 @@ class TabManager extends EventEmitter {
   _disposeView(tab) {
     const view = tab.view;
     const wc = view && view.webContents;
+    tab.attached = false;
 
     try {
       this.win.contentView.removeChildView(view);
@@ -630,10 +638,12 @@ class TabManager extends EventEmitter {
         hasError: !!t.error
       }));
 
-    const active = this.active;
+    const active = this.active && this.active.attached && !this.active.view.webContents.isDestroyed()
+      ? this.active
+      : null;
     return {
       tabs,
-      activeId: this.activeId,
+      activeId: active ? active.id : null,
       closedCount: this.closedStack.length,
       lastClosed: this.closedStack.length ? this.closedStack[this.closedStack.length - 1].url : '',
       active: active

@@ -21,6 +21,7 @@ const { SettingsStore, HistoryStore, BookmarkStore, PasswordStore } = require('.
 const { createAdBlocker, loadFilterLists, downloadFilterLists, USER_FILTER_FILE } = require('./filters');
 const { senderHosts, sameHost, isTrustedSender } = require('./ipc-guards');
 const { createUpdater, channelForArch, RELEASES_PAGE } = require('./updater');
+const { createDownloads } = require('./downloads');
 const { createPasswordVault } = require('./passwords');
 const { TabManager, CHROME_HEIGHT } = require('./tabs');
 const { toNavigationUrl, isInternalUrl } = require('./url-utils');
@@ -38,6 +39,7 @@ let bookmarks = null;
 let passwords = null;
 let vault = null;
 let updater = null;
+let downloads = null;
 let quitting = false;
 let sessionRestored = false;
 let findInPageQuery = '';
@@ -53,6 +55,8 @@ function send(channel, payload) {
 
 function setupSession() {
   const ses = session.fromPartition(SESSION_PARTITION);
+  downloads = createDownloads({ send });
+  downloads.attach(ses);
 
   // ── Блокировка рекламы и трекеров ──
   ses.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
@@ -341,7 +345,7 @@ function handleShortcut(input, tabId) {
   }
   if (ctrl && key === 'f') return run(() => focusUi('ui:focus-find'));
   if (ctrl && key === 'h') return run(() => focusUi('ui:open-history'));
-  if (ctrl && key === 'j') return run(() => focusUi('ui:open-bookmarks'));
+  if (ctrl && key === 'j') return run(() => openInternal('kitsune://downloads'));
   if (ctrl && key === 'd') return run(() => send('ui:toggle-bookmark'));
 
   // ── Масштаб страницы ──
@@ -488,7 +492,8 @@ function buildWindowMenu() {
         { label: 'Заблокированная реклама', click: () => tabs.navigate(tabs.activeId, 'kitsune://blocked') },
         { type: 'separator' },
         { label: 'История   (Ctrl+H)', click: () => focusUi('ui:open-history') },
-        { label: 'Закладки   (Ctrl+J)', click: () => focusUi('ui:open-bookmarks') },
+        { label: 'Закладки', click: () => focusUi('ui:open-bookmarks') },
+        { label: 'Загрузки   (Ctrl+J)', click: () => openInternal('kitsune://downloads') },
         { type: 'separator' },
         {
           label: 'Блокировка рекламы',
@@ -537,7 +542,8 @@ function buildAppMenu() {
     },
     { type: 'separator' },
     { label: 'История   (Ctrl+H)', click: () => focusUi('ui:open-history') },
-    { label: 'Закладки   (Ctrl+J)', click: () => focusUi('ui:open-bookmarks') },
+    { label: 'Закладки', click: () => focusUi('ui:open-bookmarks') },
+    { label: 'Загрузки   (Ctrl+J)', click: () => openInternal('kitsune://downloads') },
     { label: 'Пароли и автозаполнение', click: () => openInternal('kitsune://passwords') },
     { label: 'Найти на странице   (Ctrl+F)', enabled: hasTabs, click: () => focusUi('ui:focus-find') },
     { type: 'separator' },
@@ -1537,6 +1543,7 @@ function bootstrap() {
   registerIpc();
   registerIpcExtras();
   vault.registerIpc(ipcMain);
+  downloads.registerIpc(ipcMain);
 
   // Автообновление из GitHub Releases. Проверка запускается с задержкой,
   // чтобы не отнимать сеть и диск у старта браузера.

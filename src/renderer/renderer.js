@@ -760,8 +760,9 @@ function renderUpdate(state) {
   el.updateProgress.classList.toggle('hidden', !busy);
   el.updateBar.style.width = `${busy ? Math.max(state.status === 'checking' ? 8 : 0, state.percent || 0) : 0}%`;
 
-  // Кнопка действия: перезапуск для готового обновления, страница релизов при ошибке
-  const action = state.status === 'ready' ? 'install' : state.status === 'error' ? 'releases' : '';
+  // Для неподписанных сборок обновление скачивается только вручную.
+  const action = state.status === 'ready' ? 'install' :
+    ['error', 'available', 'unsupported'].includes(state.status) ? 'releases' : '';
   el.updateAction.dataset.action = action;
   el.updateAction.textContent = action === 'install' ? 'Перезапустить и обновить' : 'Открыть страницу релизов';
   el.updateAction.classList.toggle('hidden', !action);

@@ -16,6 +16,7 @@ function currentPage() {
   if (document.getElementById('search-engine')) return 'settings';
   if (document.getElementById('s-blocked')) return 'blocked';
   if (document.getElementById('pw-list')) return 'passwords';
+  if (document.getElementById('download-list')) return 'downloads';
   if (document.getElementById('v-app')) return 'about';
   return null;
 }
@@ -741,6 +742,61 @@ async function initAbout() {
   }
 }
 
+/* ─────────────────────────── Загрузки ─────────────────────────── */
+
+async function initDownloads() {
+  const list = document.getElementById('download-list');
+  const empty = document.getElementById('download-empty');
+  function formatBytes(value) {
+    const n = Number(value) || 0;
+    if (!n) return 'размер неизвестен';
+    if (n < 1024 * 1024) return `${Math.round(n / 1024)} КБ`;
+    return `${(n / 1024 / 1024).toFixed(1)} МБ`;
+  }
+  function render(items) {
+    list.textContent = '';
+    empty.classList.toggle('hidden', items.length > 0);
+    for (const item of items) {
+      const row = document.createElement('div');
+      row.className = 'card';
+      const name = document.createElement('div');
+      name.className = 'download-name';
+      name.textContent = item.name;
+      const meta = document.createElement('div');
+      meta.className = 'download-meta';
+      meta.textContent = `${item.status === 'completed' ? 'Готово' : item.status === 'downloading' ? 'Скачивается' : 'Прервано'} · ${formatBytes(item.received)}${item.total ? ` из ${formatBytes(item.total)}` : ''}`;
+      row.append(name, meta);
+      if (item.status === 'downloading') {
+        const progress = document.createElement('progress');
+        progress.className = 'download-progress';
+        progress.max = item.total || 1;
+        progress.value = item.received || 0;
+        row.appendChild(progress);
+      }
+      const actions = document.createElement('div');
+      actions.className = 'download-actions';
+      if (item.status === 'completed') {
+        const open = document.createElement('button');
+        open.className = 'btn'; open.textContent = 'Открыть';
+        open.onclick = () => api.downloads.open(item.id);
+        const folder = document.createElement('button');
+        folder.className = 'btn ghost'; folder.textContent = 'Показать в папке';
+        folder.onclick = () => api.downloads.folder(item.id);
+        actions.append(open, folder);
+      } else if (item.status === 'downloading') {
+        const cancel = document.createElement('button');
+        cancel.className = 'btn danger'; cancel.textContent = 'Отменить';
+        cancel.onclick = () => api.downloads.cancel(item.id);
+        actions.appendChild(cancel);
+      }
+      row.appendChild(actions);
+      list.appendChild(row);
+    }
+  }
+  render(await api.downloads.list());
+  api.on('downloads:changed', render);
+}
+
 /* ─────────────────────────── Точка входа ─────────────────────────── */
 
 async function main() {
@@ -764,6 +820,9 @@ async function main() {
       break;
     case 'passwords':
       await initPasswords();
+      break;
+    case 'downloads':
+      await initDownloads();
       break;
     case 'about':
       await initAbout();

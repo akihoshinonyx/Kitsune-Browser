@@ -112,6 +112,13 @@ function exposeBrowserApi() {
     },
 
 
+    downloads: {
+      list: () => invoke('downloads:list'),
+      cancel: (id) => invoke('downloads:cancel', id),
+      open: (id) => invoke('downloads:open', id),
+      folder: (id) => invoke('downloads:folder', id)
+    },
+
     /* ── Обновления (GitHub Releases) ── */
     updater: {
       state: () => invoke('updater:state'),
@@ -180,7 +187,8 @@ function exposeBrowserApi() {
         'ui:open-passwords',
         'ui:toggle-bookmark',
         'ui:toast',
-        'updater:status'
+        'updater:status',
+        'downloads:changed'
       ];
       if (!allowed.includes(channel)) return () => {};
       const wrapped = (_event, payload) => listener(payload);

@@ -17,10 +17,7 @@
   "win": {
     "icon": "build/icon.ico",
     "executableName": "Kitsune Browser",
-    "requestedExecutionLevel": "asInvoker",
-    "signtoolOptions": {
-      "publisherName": "Kitsune Project"
-    }
+    "requestedExecutionLevel": "asInvoker"
   },
   "nsis": {
     "oneClick": false,
