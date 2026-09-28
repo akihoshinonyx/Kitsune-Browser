@@ -1034,6 +1034,15 @@ test('адресная строка синхронизируется при см
     'при переключении вкладки черновик адреса должен сбрасываться');
 });
 
+test('Escape отменяет черновик адресной строки и восстанавливает URL вкладки', () => {
+  const src = readRenderer();
+  assert.ok(/function cancelAddressEdit\(\)/.test(src), 'нужна отдельная отмена редактирования');
+  assert.ok(/el\.address\.value = active && active\.url \? active\.url : ''/.test(src),
+    'после Escape должен восстанавливаться URL активной вкладки');
+  assert.ok(/e\.preventDefault\(\);\s*cancelAddressEdit\(\);/.test(src),
+    'Escape адресной строки должен отменять черновик');
+});
+
 
 /* ─────────────────────────── Оптимизация ─────────────────────────── */
 

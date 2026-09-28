@@ -688,6 +688,15 @@ function commitAddress() {
   el.address.blur();
 }
 
+/** Отменяет черновик в адресной строке и возвращает URL активной вкладки. */
+function cancelAddressEdit() {
+  const active = ui.state.active;
+  hideSuggestions();
+  ui.editingAddress = false;
+  el.address.value = active && active.url ? active.url : '';
+  el.address.blur();
+}
+
 /* ─────────────────────────── Автообновление ───────────────────────────
    Полоса обновления и всплывающие уведомления живут в нижней части окна, а
    нативная страница вкладки рисуется поверх HTML-слоя. Поэтому под них
@@ -998,8 +1007,8 @@ function bindEvents() {
       e.preventDefault();
       moveSuggestion(-1);
     } else if (e.key === 'Escape') {
-      hideSuggestions();
-      el.address.blur();
+      e.preventDefault();
+      cancelAddressEdit();
     }
   });
 
