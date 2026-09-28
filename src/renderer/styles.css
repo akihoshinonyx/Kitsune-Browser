@@ -322,6 +322,25 @@ body.tab-dragging .tab { cursor: grabbing; }
 /* Кнопка «смотреть в окне» в состоянии «видео уже в отдельном окне» */
 .icon-btn.active { background: var(--accent-soft); color: var(--accent); }
 
+.downloads-button { position: relative; }
+.downloads-badge {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  min-width: 15px;
+  height: 14px;
+  padding: 0 3px;
+  border: 2px solid var(--bg);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #17191d;
+  font-size: 8px;
+  line-height: 10px;
+  font-weight: 700;
+  text-align: center;
+  pointer-events: none;
+}
+
 .omnibox {
   position: relative;
   flex: 1 1 auto;

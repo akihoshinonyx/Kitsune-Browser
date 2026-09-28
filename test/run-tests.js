@@ -1142,10 +1142,17 @@ test('активной считается только прикреплённа�
   assert.ok(/!t\.view\.webContents\.isDestroyed\(\)/.test(src));
 });
 
-test('версия 1.2.0 синхронизирована', () => {
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.2.0');
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.2.0');
-  assert.strictEqual(require('../src/shared/version').VERSION, '1.2.0');
+test('версия 1.2.1 синхронизирована', () => {
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.2.1');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.2.1');
+  assert.strictEqual(require('../src/shared/version').VERSION, '1.2.1');
+});
+
+test('история закрывается кнопкой, а загрузки доступны из тулбара', () => {
+  const renderer = readRenderer();
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/index.html'), 'utf8');
+  assert.ok(/sbClose\.addEventListener\('click', closeSidebar\)/.test(renderer));
+  assert.ok(/id="downloads-button"/.test(html) && /downloads:changed/.test(renderer));
 });
 
 suite('Автообновление из GitHub Releases');

@@ -59,6 +59,8 @@ const el = {
   star: $('bookmark-star'),
   suggestions: $('suggestions'),
   menuButton: $('menu-button'),
+  downloadsButton: $('downloads-button'),
+  downloadsBadge: $('downloads-badge'),
   zoomBadge: $('zoom-badge'),
   pipButton: $('pip-button'),
 
@@ -853,6 +855,33 @@ function closeSidebar() {
   applyInsets({ sidebarRight: 0 });
 }
 
+function openDownloads() {
+  api.tabs.navigate('kitsune://downloads');
+}
+
+function renderDownloadsButton(items) {
+  const active = (items || []).filter((item) => item.status === 'downloading');
+  if (!active.length) {
+    el.downloadsBadge.classList.add('hidden');
+    el.downloadsButton.title = 'Загрузки';
+    return;
+  }
+  const total = active.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+  const received = active.reduce((sum, item) => sum + (Number(item.received) || 0), 0);
+  const percent = total > 0 ? Math.max(0, Math.min(100, Math.round(received / total * 100))) : null;
+  el.downloadsBadge.textContent = percent === null ? String(active.length) : `${percent}%`;
+  el.downloadsBadge.classList.remove('hidden');
+  el.downloadsButton.title = `${active.length} активн. загрузок${percent === null ? '' : ` · ${percent}%`}`;
+}
+
+async function refreshDownloadsButton() {
+  try {
+    renderDownloadsButton(await api.downloads.list());
+  } catch {
+    renderDownloadsButton([]);
+  }
+}
+
 async function loadSidebar() {
   const query = el.sbSearch.value.trim();
   el.sbList.textContent = '';
@@ -1013,10 +1042,26 @@ function bindEvents() {
     }
   });
 
-  // ── Счётчик блокировок и закладка ──
+  // ── Счётчик блокировок, закладка и загрузки ──
   el.adblockBadge.addEventListener('click', () => navigate('kitsune://blocked'));
   el.star.addEventListener('click', onToggleBookmark);
   el.zoomBadge.addEventListener('click', () => api.tabs.zoomReset());
+  el.downloadsButton.addEventListener('click', openDownloads);
+
+  // ── Боковая панель ──
+  el.sbClose.addEventListener('click', closeSidebar);
+  el.sbTabHistory.addEventListener('click', () => openSidebar('history'));
+  el.sbTabBookmarks.addEventListener('click', () => openSidebar('bookmarks'));
+  el.sbSearch.addEventListener('input', loadSidebar);
+  el.sbClear.addEventListener('click', async () => {
+    if (ui.sidebarMode === 'history') {
+      await api.history.clear();
+      await loadSidebar();
+      showToast('История очищена');
+    } else {
+      await api.bookmarks.openAll();
+    }
+  });
 
   // ── «Смотреть в окне» (picture-in-picture) ──
   // Видео ищет main-процесс на самой странице (executeJavaScript с
@@ -1151,6 +1196,7 @@ function subscribe() {
     el.address.select();
   });
   api.on('ui:toggle-bookmark', () => onToggleBookmark());
+  api.on('downloads:changed', (items) => renderDownloadsButton(items));
   api.on('ui:toast', ({ text }) => showToast(String(text || '')));
 
   api.on('window:html-fullscreen', ({ value }) => {
@@ -1172,6 +1218,7 @@ async function init() {
   subscribe();
 
   await refreshBookmarkCache();
+  await refreshDownloadsButton();
 
   const info = await api.getAppInfo();
   ui.appInfo = info;
