@@ -19,10 +19,15 @@
  */
 
 const { APP_NAME } = require('../shared/constants');
+const { hostnameOf } = require('./adblock');
 const { senderHosts, isTrustedSender, sameHost } = require('./ipc-guards');
 
 /* Проверки отправителя (senderHosts / isTrustedSender / sameHost) живут в
-   ipc-guards.js — они общие для менеджера паролей и блокировщика. */
+   ipc-guards.js — они общие для менеджера паролей и блокировщика.
+   hostnameOf берём из adblock.js: там же живёт кэш разбора адресов, которым
+   пользуется и блокировщик, и хранилище паролей. Раньше он здесь не был
+   подключён — capture() падал с ReferenceError, и диалог «Сохранить пароль?»
+   не показывался никогда. */
 
 function createPasswordVault({ store, settings, send, tabs, dialog, getWindow }) {
   // Сайты, для которых пользователь отказался сохранять пароль в этой сессии
@@ -90,11 +95,15 @@ function createPasswordVault({ store, settings, send, tabs, dialog, getWindow })
       const host = hostnameOf(url);
       if (!host || dismissed.has(host) || asking) return false;
 
-      // Такая пара уже есть — просто обновляем отметку использования
-      const existing = store.forUrl(url).find((item) => item.username === username);
+      // При смене пароля существующего логина спрашиваем об обновлении:
+      // иначе в хранилище навсегда остаётся старый пароль.
+      const existing = store.forUrl(url).find((item) => item.host === host && item.username === username);
       if (existing) {
-        store.touch(existing.id);
-        return true;
+        const saved = store.reveal(existing.id);
+        if (saved && saved.password === password) {
+          store.touch(existing.id);
+          return true;
+        }
       }
 
       asking = true;

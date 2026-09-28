@@ -51,6 +51,16 @@ svg {
 
 .hidden { display: none !important; }
 
+/* HTML5 fullscreen у WebContentsView занимает весь content area окна.
+   Сам UI остаётся под ним, но скрываем его и при возврате восстанавливаем. */
+.html-fullscreen #tabstrip,
+.html-fullscreen #toolbar,
+.html-fullscreen #findbar,
+.html-fullscreen #sidebar,
+.html-fullscreen #update-banner,
+.html-fullscreen #progress,
+.html-fullscreen #toast { display: none !important; }
+
 /* ─────────────── Полоса вкладок ─────────────── */
 
 .tabstrip {
@@ -82,7 +92,11 @@ svg {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 1 1 auto;
+  /* Полоса вкладок занимает ровно столько места, сколько нужно вкладкам:
+     свободное место справа остаётся «хромом» окна (за него можно тянуть
+     окно), а кнопка «+» идёт сразу за последней вкладкой. */
+  flex: 0 1 auto;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -215,6 +229,12 @@ body.tab-dragging .tab { cursor: grabbing; }
   width: 26px;
   height: 26px;
   flex: 0 0 26px;
+  /* Кнопка стоит последним элементом полосы вкладок — сразу за последней
+     вкладкой. Если вкладок много и полоса прокручивается, кнопка «липнет»
+     к правому краю, чтобы оставаться доступной (как в Firefox). */
+  position: sticky;
+  right: 0;
+  margin-left: 2px;
   border: 0;
   border-radius: 7px;
   background: transparent;
@@ -298,6 +318,9 @@ body.tab-dragging .tab { cursor: grabbing; }
 .icon-btn svg { width: 16px; height: 16px; }
 .icon-btn.small { width: 26px; height: 26px; flex: 0 0 26px; }
 .icon-btn.small svg { width: 14px; height: 14px; }
+
+/* Кнопка «смотреть в окне» в состоянии «видео уже в отдельном окне» */
+.icon-btn.active { background: var(--accent-soft); color: var(--accent); }
 
 .omnibox {
   position: relative;

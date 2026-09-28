@@ -463,6 +463,29 @@ const KITSUNE_FILTERS = `
 */exit-intent*
 
 ! ============================================================
+! YouTube: видео-реклама и трекеры
+! ============================================================
+! --- Рекламные хосты YouTube ---
+||ads.youtube.com^
+||youtube-ad-ssl.googlevideo.com^
+||youtube-ads.g.doubleclick.net^
+! --- Скрипты и пиксели рекламы YouTube ---
+||youtube.com/y.js$script
+||youtube.com/ads$script
+||youtube.com/ads.js$script
+||youtube.com/ad_status.js$script
+||youtube.com/pagead/js/adsbygoogle.js$script
+||youtube.com/tag/js/gpt.js$script
+||youtube.com/analytics.js$script
+||youtube.com/ga.js$script
+||youtube.com/gtag/js$script
+||youtube.com/instream/ad_status.js$script
+! --- Трейкеры YouTube ---
+||youtube.com/api/stats$ping
+! --- Исключения: не блокировать полезное ---
+@@||youtube.com/api/stats^$ping
+
+! ============================================================
 ! Косметические правила — реклама не грузится И не показывается
 ! (формат uBlock Origin: selector, domain##selector, #@# — исключение)
 ! ============================================================

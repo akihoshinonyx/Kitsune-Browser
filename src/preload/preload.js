@@ -104,6 +104,13 @@ function exposeBrowserApi() {
       clear: () => invoke('password:clear')
     },
 
+    /* ── «Смотреть в окне» (picture-in-picture) ──
+       Кнопка в тулбаре: видео ищет main-процесс на странице активной
+       вкладки. Состояние (есть ли видео) приходит в tabs:state → pip. */
+    pip: {
+      toggle: (id) => invoke('pip:toggle', id)
+    },
+
 
     /* ── Обновления (GitHub Releases) ── */
     updater: {
@@ -422,6 +429,119 @@ function exposePageApi() {
 
   ipcRenderer.on('adblock:picker-start', () => startPicker());
   ipcRenderer.on('adblock:picker-stop', () => stopPicker());
+
+  /* ── «Смотреть в окне»: сообщаем main-процессу, есть ли на странице видео ──
+     Кнопка PiP в тулбаре появляется только тогда, когда видео действительно
+     играет (как в Firefox). Наблюдаем за DOM страницы, потому что сам UI
+     браузера к чужому документу доступа не имеет. */
+  let videoStateTimer = null;
+  let lastVideoState = '';
+
+  function reportVideoState(force = false) {
+    try {
+      const videos = [...document.querySelectorAll('video')];
+      const playing = videos.some((v) => !v.paused && !v.ended && v.currentTime > 0);
+      const inPip = !!document.pictureInPictureElement;
+      const key = `${videos.length ? 1 : 0}${playing ? 1 : 0}${inPip ? 1 : 0}`;
+      if (!force && key === lastVideoState) return;
+      lastVideoState = key;
+      clearTimeout(videoStateTimer);
+      // play/pause приходят пачками (переключение источника) — склеиваем
+      videoStateTimer = setTimeout(() => {
+        invoke('pip:video-state', { available: videos.length > 0, playing, inPip });
+      }, 150);
+    } catch {
+      /* страница выгружается */
+    }
+  }
+
+  function watchVideoState() {
+    const events = [
+      'play',
+      'playing',
+      'pause',
+      'ended',
+      'emptied',
+      'loadeddata',
+      'enterpictureinpicture',
+      'leavepictureinpicture'
+    ];
+    for (const name of events) {
+      document.addEventListener(name, () => reportVideoState(true), true);
+    }
+    window.addEventListener('pagehide', () => {
+      invoke('pip:video-state', { available: false, playing: false, inPip: false });
+    });
+    reportVideoState(true);
+  }
+
+  /* ── YouTube: пропуск рекламы ──
+     Косметические правила скрывают баннеры, но пре-ролл и mid-roll играют
+     внутри самого плеера. Здесь работает то же, что делает скриптлет
+     uBlock Origin: жмём «Пропустить», а рекламу без кнопки проматываем —
+     YouTube сам помечает её классом .ad-showing на контейнере плеера. */
+  function setupYouTubeAdSkip() {
+    try {
+      const host = String(location.hostname || '').toLowerCase();
+      if (!/(^|\.)youtube\.com$/.test(host)) return;
+      if (window.__kitsuneYtAds) return;
+      window.__kitsuneYtAds = true;
+
+      const SKIP_SELECTOR = [
+        '.ytp-ad-skip-button',
+        '.ytp-ad-skip-button-modern',
+        '.ytp-skip-ad-button',
+        '.ytp-ad-survey-answer-button'
+      ].join(',');
+
+      function skipAd() {
+        try {
+          if (!document.querySelector('.ad-showing')) return;
+          const button = [...document.querySelectorAll(SKIP_SELECTOR)].find(
+            (node) => node.offsetParent !== null
+          );
+          if (button) {
+            button.click();
+            return;
+          }
+          // Реклама без кнопки «пропустить» — перематываем её до конца.
+          const video = document.querySelector('video');
+          if (video && Number.isFinite(video.duration) && video.duration > 0) {
+            if (video.currentTime < video.duration - 0.4) {
+              video.currentTime = video.duration - 0.1;
+            }
+            const started = video.play();
+            if (started && typeof started.catch === 'function') started.catch(() => {});
+          }
+        } catch {
+          /* плеер ещё не готов */
+        }
+      }
+
+      function hideOverlays() {
+        const selectors = [
+          '.ytp-ad-overlay-container',
+          '.ytp-ad-text-overlay',
+          '.ytp-ad-image-overlay',
+          '#player-ads'
+        ];
+        for (const node of document.querySelectorAll(selectors.join(','))) {
+          node.style.setProperty('display', 'none', 'important');
+        }
+      }
+
+      setInterval(() => {
+        skipAd();
+        hideOverlays();
+      }, 350);
+      document.addEventListener('play', skipAd, true);
+    } catch {
+      /* не YouTube — ничего не делаем */
+    }
+  }
+
+  watchVideoState();
+  setupYouTubeAdSkip();
 
   contextBridge.exposeInMainWorld('kitsunePage', page);
 }

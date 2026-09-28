@@ -16,7 +16,15 @@ const K = window.KITSUNE;
 /* ─────────────────────────── Состояние UI ─────────────────────────── */
 
 const ui = {
-  state: { tabs: [], activeId: null, active: null, adblock: {} },
+  state: {
+    tabs: [],
+    activeId: null,
+    active: null,
+    adblock: {},
+    // Состояние «смотреть в окне» активной вкладки (заполняет main-процесс
+    // через tabs:state — см. pip в TabManager.getState)
+    pip: { available: false, playing: false, inPip: false }
+  },
   appInfo: null,
   suggestions: [],
   selectedSuggestion: -1,
@@ -52,6 +60,7 @@ const el = {
   suggestions: $('suggestions'),
   menuButton: $('menu-button'),
   zoomBadge: $('zoom-badge'),
+  pipButton: $('pip-button'),
 
   findbar: $('findbar'),
   findInput: $('find-input'),
@@ -188,6 +197,10 @@ function renderTabs() {
     entry.node.remove();
     tabNodes.delete(id);
   }
+
+  // Кнопка «новая вкладка» всегда идёт последней: вкладки вставляются ПЕРЕД
+  // ней (см. anchor выше), а если порядок узлов всё же разошёлся — поправляем.
+  if (el.tabs.lastElementChild !== el.newTab) el.tabs.appendChild(el.newTab);
 
   syncActiveTabDrag();
 }
@@ -404,6 +417,7 @@ function renderToolbar() {
     el.adblockCount.textContent = '0';
     el.star.classList.remove('filled');
     el.zoomBadge.classList.add('hidden');
+    el.pipButton.classList.add('hidden');
     return;
   }
 
@@ -440,7 +454,27 @@ function renderToolbar() {
     : 'Блокировка рекламы выключена';
 
   renderZoomBadge(a);
+  renderPipButton(a);
   renderStar();
+}
+
+/**
+ * Кнопка «смотреть в окне».
+ *
+ * Показывается только тогда, когда на странице активной вкладки есть
+ * воспроизводимое видео (состояние присылает main-процесс) — как в Firefox,
+ * где кнопка появляется в адресной строке на время воспроизведения.
+ */
+function renderPipButton(active) {
+  const pip = ui.state.pip || {};
+  const inPip = !!pip.inPip;
+  const show = !active.isInternal && (!!pip.playing || inPip);
+  el.pipButton.classList.toggle('hidden', !show);
+  if (!show) return;
+  el.pipButton.title = inPip
+    ? 'Вернуть видео на страницу'
+    : 'Смотреть видео в отдельном окне (как в Firefox)';
+  el.pipButton.classList.toggle('active', inPip);
 }
 
 /** Показывает бейдж масштаба, если он отличается от 100 % */
@@ -973,6 +1007,11 @@ function bindEvents() {
   el.adblockBadge.addEventListener('click', () => navigate('kitsune://blocked'));
   el.star.addEventListener('click', onToggleBookmark);
   el.zoomBadge.addEventListener('click', () => api.tabs.zoomReset());
+
+  // ── «Смотреть в окне» (picture-in-picture) ──
+  // Видео ищет main-процесс на самой странице (executeJavaScript с
+  // userGesture — без него Chromium запрещает requestPictureInPicture).
+  el.pipButton.addEventListener('click', () => api.pip.toggle());
 
   // ── Меню (нативное, рисуется main-процессом) ──
   el.menuButton.addEventListener('click', (e) => {

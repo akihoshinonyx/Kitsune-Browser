@@ -19,7 +19,7 @@ const { APP_NAME, APP_SHORT_NAME, APP_TAGLINE, SEARCH_ENGINES } = require('../sh
 const { VERSION } = require('../shared/version');
 const { SettingsStore, HistoryStore, BookmarkStore, PasswordStore } = require('./store');
 const { createAdBlocker, loadFilterLists, downloadFilterLists, USER_FILTER_FILE } = require('./filters');
-const { senderHosts, sameHost } = require('./ipc-guards');
+const { senderHosts, sameHost, isTrustedSender } = require('./ipc-guards');
 const { createUpdater, channelForArch, RELEASES_PAGE } = require('./updater');
 const { createPasswordVault } = require('./passwords');
 const { TabManager, CHROME_HEIGHT } = require('./tabs');
@@ -63,6 +63,17 @@ function setupSession() {
       const tabForRequest = findTabByWebContentsId(details.webContentsId);
       const tabUrl = tabForRequest ? tabForRequest.url : '';
       const tabId = tabForRequest ? tabForRequest.id : -1;
+
+      // YouTube: рекламные хосты блокируем всегда — даже если сайт в
+      // белом списке. Косметические правила (скрытие баннеров) на
+      // исключённых сайтах не работают, а видео-реклама без них
+      // продолжает грузиться.
+      if (isYouTubeAdUrl(details.url, tabUrl)) {
+        adblock.recordBlocked({ tabId, url: details.url, type: details.resourceType });
+        if (tabForRequest) tabForRequest.blocked = adblock.statsForTab(tabId);
+        notifyBlockedCount(tabForRequest);
+        return callback({ cancel: true });
+      }
 
       const action = adblock.getAction({
         url: details.url,
@@ -158,6 +169,65 @@ function findTabByWebContentsId(webContentsId) {
   }
   tabByWcId.delete(webContentsId);
   return null;
+}
+
+/**
+ * YouTube: рекламные хосты блокируем всегда — даже если сайт в белом списке.
+ *
+ * Косметические правила (скрытие баннеров) на исключённых сайтах не работают,
+ * а видео-реклама без них продолжает грузиться. Поэтому для YouTube-страниц
+ * проверяем URL запроса на известные рекламные паттерны и блокируем.
+ */
+const YOUTUBE_AD_HOSTS = new Set([
+  'doubleclick.net',
+  'googlesyndication.com',
+  'googleadservices.com',
+  'google-analytics.com',
+  'googletagservices.com',
+  'adservice.google.com',
+  'pagead2.googlesyndication.com',
+  'partner.googleadservices.com',
+  'pubads.g.doubleclick.net',
+  'securepubads.g.doubleclick.net',
+  'static.doubleclick.net',
+  'ad.doubleclick.net',
+  'stats.g.doubleclick.net',
+  'ads.youtube.com',
+  'youtube-ad-ssl.googlevideo.com',
+  'youtube-ads.g.doubleclick.net'
+]);
+
+const YOUTUBE_AD_PATHS = [
+  '/ad_status.js',
+  '/pagead/js/adsbygoogle.js',
+  '/tag/js/gpt.js',
+  '/analytics.js',
+  '/ga.js',
+  '/gtag/js',
+  '/instream/ad_status.js'
+];
+
+function isYouTubeAdUrl(url, tabUrl) {
+  if (!url || !tabUrl) return false;
+  const tabHost = hostnameOf(tabUrl);
+  if (!tabHost || !/(^|\.)youtube\.com$/.test(tabHost)) return false;
+
+  const host = hostnameOf(url);
+  if (!host) return false;
+
+  // Рекламный хост — блокируем
+  if (YOUTUBE_AD_HOSTS.has(host)) return true;
+  for (const adHost of YOUTUBE_AD_HOSTS) {
+    if (host.endsWith('.' + adHost)) return true;
+  }
+
+  // Рекламный путь на самом YouTube — блокируем
+  const lowerUrl = url.toLowerCase();
+  for (const path of YOUTUBE_AD_PATHS) {
+    if (lowerUrl.includes(path)) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -279,6 +349,9 @@ function handleShortcut(input, tabId) {
   if (ctrl && (key === '-' || key === '_' || key === 'subtract')) return run(() => tabs.setZoom(id, -0.5));
   if (ctrl && key === '0') return run(() => tabs.resetZoom(id));
 
+  // ── Видео в отдельном окне (как в Firefox: Ctrl+Shift+]) ──
+  if (ctrl && shift && (key === ']' || key === 'ъ')) return run(() => togglePictureInPicture(id));
+
   // ── Инструменты разработчика ──
   if (key === 'f12' || (ctrl && shift && key === 'i')) return run(() => toggleTabDevTools(id));
 
@@ -294,6 +367,8 @@ function createWindow() {
     minWidth: 720,
     minHeight: 480,
     title: APP_NAME,
+    // Кастомные кнопки в полосе вкладок заменяют стандартные Windows-кнопки.
+    frame: process.platform !== 'win32',
     backgroundColor: '#14161a',
     autoHideMenuBar: true,
     icon: path.join(__dirname, '..', '..', 'build', 'icon.png'),
@@ -476,6 +551,11 @@ function buildAppMenu() {
       label: 'Заблокировать элемент на странице',
       enabled: hasTabs,
       click: () => startElementPicker(tabs.activeId)
+    },
+    {
+      label: 'Смотреть видео в отдельном окне   (Ctrl+Shift+])',
+      enabled: hasTabs,
+      click: () => togglePictureInPicture(tabs.activeId)
     },
     {
       label: 'Отключить блокировку на этом сайте',
@@ -812,6 +892,99 @@ function addCosmeticRule(url, selector) {
   return { added, rules: adblock.rulesCount };
 }
 
+/* ─────────────── «Смотреть в окне» (picture-in-picture) ─────────────── */
+
+/**
+ * Скрипт, который находит видео на странице и переключает его в отдельное
+ * окно (или возвращает обратно, если оно уже там).
+ *
+ * Chromium разрешает requestPictureInPicture() только по действию
+ * пользователя, поэтому скрипт выполняется через executeJavaScript с
+ * userGesture = true — тогда PiP открывается так же, как по кнопке в плеере.
+ */
+const PIP_TOGGLE_SCRIPT = `(async () => {
+  try {
+    if (!document.pictureInPictureEnabled) return { ok: false, reason: 'unsupported' };
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture();
+      return { ok: true, action: 'exit' };
+    }
+    const videos = [...document.querySelectorAll('video')];
+    if (!videos.length) return { ok: false, reason: 'no-video' };
+    const rank = (v) => {
+      const rect = v.getBoundingClientRect();
+      const area = Math.min(1, Math.max(0, (rect.width * rect.height) / (1280 * 720)));
+      const playing = v.currentTime > 0 && !v.paused && !v.ended && v.readyState > 2;
+      return (playing ? 1000 : 0) + area * 100;
+    };
+    const target = videos.sort((a, b) => rank(b) - rank(a))[0];
+    if (target.disablePictureInPicture) return { ok: false, reason: 'disabled' };
+    await target.requestPictureInPicture();
+    return { ok: true, action: 'enter' };
+  } catch (err) {
+    return { ok: false, reason: 'error', message: String((err && err.message) || err) };
+  }
+})();`;
+
+/** Переключает picture-in-picture для вкладки (по умолчанию — активной) */
+async function togglePictureInPicture(id) {
+  const tab = id !== null && id !== undefined && tabs.tabs.has(id) ? tabs.tabs.get(id) : tabs.active;
+  const wc = tab && tab.view.webContents;
+  if (!wc || wc.isDestroyed() || isInternalUrl(tab.url)) {
+    send('ui:toast', { text: 'На этой странице нет видео' });
+    return { ok: false, reason: 'no-video' };
+  }
+  try {
+    const result = await wc.executeJavaScript(PIP_TOGGLE_SCRIPT, true);
+    if (result && result.ok) {
+      send('ui:toast', {
+        text:
+          result.action === 'exit'
+            ? 'Видео возвращено на страницу'
+            : 'Видео открыто в отдельном окне'
+      });
+      return result;
+    }
+    send('ui:toast', {
+      text:
+        result && result.reason === 'disabled'
+          ? 'Это видео нельзя показать в отдельном окне'
+          : 'На этой странице нет видео'
+    });
+    return result || { ok: false, reason: 'no-video' };
+  } catch (err) {
+    console.error('[Kitsune] Picture-in-picture:', err.message);
+    send('ui:toast', { text: 'Не удалось открыть видео в отдельном окне' });
+    return { ok: false, reason: 'error' };
+  }
+}
+
+/**
+ * Запоминает состояние видео вкладки: по нему UI показывает кнопку
+ * «смотреть в окне» (как в Firefox — она появляется только на время
+ * воспроизведения). Состояние присылает preload обычных сайтов.
+ */
+function setTabVideoState(event, state = {}) {
+  const tab = findTabByWebContentsId(event.sender.id);
+  if (!tab) return false;
+  const next = {
+    available: !!state.available,
+    playing: !!state.playing,
+    inPip: !!state.inPip
+  };
+  const prev = tab.pip || {};
+  if (
+    prev.available === next.available &&
+    prev.playing === next.playing &&
+    prev.inPip === next.inPip
+  ) {
+    return true;
+  }
+  tab.pip = next;
+  tabs.emitState();
+  return true;
+}
+
 /* ─────────────────────────── IPC с UI-слоем ─────────────────────────── */
 
 /**
@@ -903,15 +1076,30 @@ function showPageContextMenu(tabId, params = {}) {
   }
 
   if (params.srcURL) {
+    // Для <video>/<audio> подписи «изображение» путали: медиа — не картинка
+    const isMedia = params.mediaType === 'video' || params.mediaType === 'audio';
     if (template.length) template.push({ type: 'separator' });
     template.push(
       {
-        label: 'Открыть изображение в новой вкладке',
+        label: isMedia ? 'Открыть медиа в новой вкладке' : 'Открыть изображение в новой вкладке',
         click: () => tabs.create({ url: params.srcURL, background: true })
       },
-      { label: 'Копировать адрес изображения', click: () => clipboard.writeText(params.srcURL) },
-      { label: 'Заблокировать домен изображения', click: () => blockHostOf(params.srcURL) }
+      {
+        label: isMedia ? 'Копировать адрес медиа' : 'Копировать адрес изображения',
+        click: () => clipboard.writeText(params.srcURL)
+      },
+      {
+        label: isMedia ? 'Заблокировать домен медиа' : 'Заблокировать домен изображения',
+        click: () => blockHostOf(params.srcURL)
+      }
     );
+    // Как в Firefox: правый клик по видео → «смотреть в отдельном окне»
+    if (params.mediaType === 'video') {
+      template.push({
+        label: 'Смотреть видео в отдельном окне',
+        click: () => togglePictureInPicture(tabId)
+      });
+    }
   }
 
   if (template.length) template.push({ type: 'separator' });
@@ -1139,6 +1327,17 @@ function registerIpcExtras() {
     });
     reloadFilterLists();
     return { results, rules: adblock.rulesCount };
+  });
+
+  // ── «Смотреть в окне» (picture-in-picture) ──
+  // Состояние видео принимаем только от вкладок браузера: обычный сайт не
+  // может «включить» кнопку PiP у чужой страницы (findTabByWebContentsId
+  // сверяет webContents отправителя с известными вкладками).
+  handle('pip:video-state', (event, state) => setTabVideoState(event, state || {}));
+  // Переключение — привилегированное действие, доступно только UI браузера
+  handle('pip:toggle', (event, id) => {
+    if (!isTrustedSender(event)) return { ok: false, reason: 'forbidden' };
+    return togglePictureInPicture(id);
   });
 
   // ── Меню-«гамбургер» и отступы UI ──

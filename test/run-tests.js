@@ -1438,6 +1438,42 @@ test('main-процесс подключает обновления и умее�
   assert.ok(/updateChannel: channelForArch\(\)/.test(main), 'страница «О браузере» должна знать канал');
 });
 
+suite('Видео, fullscreen, пароли и кнопки окна');
+
+test('кнопка новой вкладки стоит в конце полосы и не занимает всё свободное место', () => {
+  const html = readProject('src/renderer/index.html');
+  const css = readProject('src/renderer/styles.css');
+  const js = readRenderer();
+  assert.ok(/id="tabs"[\s\S]*?id="new-tab"[\s\S]*?<\/div>/.test(html));
+  assert.ok(/lastElementChild !== el\.newTab/.test(js));
+  assert.ok(/flex: 0 1 auto/.test(css));
+});
+
+test('PiP ожидает результат Chromium, а Windows-окно не дублирует кнопки', () => {
+  const main = readMain();
+  assert.ok(/frame: process\.platform !== 'win32'/.test(main));
+  assert.ok(/await target\.requestPictureInPicture\(\)/.test(main));
+  assert.ok(/await document\.exitPictureInPicture\(\)/.test(main));
+  assert.ok(/executeJavaScript\(PIP_TOGGLE_SCRIPT, true\)/.test(main));
+});
+
+test('HTML fullscreen убирает отступ страницы и возвращает вкладки после выхода', () => {
+  const tabs = readTabs();
+  const css = readProject('src/renderer/styles.css');
+  assert.ok(/const top = fullscreen \? 0 : CHROME_HEIGHT/.test(tabs));
+  assert.ok(/leave-html-full-screen/.test(tabs));
+  assert.ok(/window:html-fullscreen', \{ value: false \}/.test(tabs));
+  assert.ok(/\.html-fullscreen #tabstrip/.test(css));
+});
+
+test('менеджер паролей предлагает обновить изменённый пароль и скрывает ввод', () => {
+  const pw = readProject('src/main/passwords.js');
+  const html = readProject('src/renderer/pages/passwords.html');
+  assert.ok(/saved\.password === password/.test(pw));
+  assert.ok(/await askToSave\(\{ host, username, password, url \}\)/.test(pw));
+  assert.ok(/type="password" id="pw-add-pass"/.test(html));
+});
+
 /* ─────────────────────────── Итог ─────────────────────────── */
 console.log(`\n\u001b[1mИтого:\u001b[0m ${passed} успешно, ${failed} с ошибкой`);
 

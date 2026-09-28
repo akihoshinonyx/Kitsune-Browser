@@ -44,6 +44,7 @@ class TabManager extends EventEmitter {
     // HTML-хрома окна, поэтому выпадающие элементы видны только там, где
     // вкладка сдвинута. См. setInsets().
     this.insets = { overlayBottom: 0, sidebarRight: 0, footer: 0 };
+    this.htmlFullscreenId = null;
     this._layoutScheduled = false;
     this._emitTimer = null;
     this._lastStateJson = '';
@@ -241,8 +242,18 @@ class TabManager extends EventEmitter {
       return { action: 'allow' };
     });
 
-    wc.on('enter-html-full-screen', () => this.ctx.send('window:html-fullscreen', { value: true }));
-    wc.on('leave-html-full-screen', () => this.ctx.send('window:html-fullscreen', { value: false }));
+    wc.on('enter-html-full-screen', () => {
+      if (this.activeId !== id) this.activate(id);
+      this.htmlFullscreenId = id;
+      this.layoutAll();
+      this.ctx.send('window:html-fullscreen', { value: true });
+    });
+    wc.on('leave-html-full-screen', () => {
+      if (this.htmlFullscreenId !== id) return;
+      this.htmlFullscreenId = null;
+      this.layoutAll();
+      this.ctx.send('window:html-fullscreen', { value: false });
+    });
   }
 
   _syncTab(tab) {
@@ -375,6 +386,14 @@ class TabManager extends EventEmitter {
     // Уже активна — не перерисовываем UI зря (это же защищает перетаскивание
     // вкладок: перестройка DOM на mousedown ломала бы подсветку drag&drop)
     if (this.activeId === id) return;
+    if (this.htmlFullscreenId !== null && this.htmlFullscreenId !== id) {
+      const fullscreen = this.tabs.get(this.htmlFullscreenId);
+      if (fullscreen && !fullscreen.view.webContents.isDestroyed()) {
+        fullscreen.view.webContents.executeJavaScript('if (document.fullscreenElement) document.exitFullscreen()', true).catch(() => {});
+      }
+      this.htmlFullscreenId = null;
+      this.ctx.send('window:html-fullscreen', { value: false });
+    }
     for (const t of this.tabs.values()) {
       t.view.setVisible(t.id === id);
     }
@@ -404,6 +423,10 @@ class TabManager extends EventEmitter {
 
     const index = this.order.indexOf(id);
     const wasActive = this.activeId === id;
+    if (this.htmlFullscreenId === id) {
+      this.htmlFullscreenId = null;
+      this.ctx.send('window:html-fullscreen', { value: false });
+    }
 
     // 1) Сначала чистим состояние — UI обновится в любом случае
     this.tabs.delete(id);
@@ -576,9 +599,10 @@ class TabManager extends EventEmitter {
       // Отступы применяются только к активной вкладке: остальные скрыты,
       // а лишние setBounds заставляют их зря пересчитывать layout.
       const isActive = tab.id === this.activeId;
-      const top = CHROME_HEIGHT + (isActive ? overlay : 0);
-      const right = isActive ? sidebar : 0;
-      const bottom = isActive ? footer : 0;
+      const fullscreen = tab.id === this.htmlFullscreenId;
+      const top = fullscreen ? 0 : CHROME_HEIGHT + (isActive ? overlay : 0);
+      const right = fullscreen ? 0 : isActive ? sidebar : 0;
+      const bottom = fullscreen ? 0 : isActive ? footer : 0;
       try {
         tab.view.setBounds({
           x: 0,
@@ -635,6 +659,10 @@ class TabManager extends EventEmitter {
         rules: this.ctx.adblock.rulesCount,
         blockedTotal: this.ctx.adblock.blockedTotal
       },
+      // Состояние picture-in-picture активной вкладки: есть ли на странице
+      // видео и играет ли оно. По нему UI показывает кнопку «смотреть в окне»
+      // (как в Firefox). Заполняет main-процесс — см. setTabVideoState().
+      pip: (active && active.pip) || { available: false, playing: false, inPip: false },
       // Отступы активной вкладки — по ним UI понимает, сколько места он
       // выторговал под выпадающие списки и боковую панель (см. setInsets).
       insets: { ...this.insets },

@@ -17,10 +17,14 @@
         <circle cx="19.5" cy="17" r="1.7" />
       </svg>
     </div>
-    <div id="tabs" class="tabs"></div>
-    <button id="new-tab" class="tab-new" title="Новая вкладка (Ctrl+T)">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
-    </button>
+    <!-- Кнопка «новая вкладка» живёт ВНУТРИ полосы вкладок и всегда стоит
+         последней: renderer.js переставляет узлы вкладок перед ней, поэтому
+         кнопка оказывается сразу после последней вкладки (как в Firefox). -->
+    <div id="tabs" class="tabs">
+      <button id="new-tab" class="tab-new" title="Новая вкладка (Ctrl+T)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
+      </button>
+    </div>
     <div class="window-controls">
       <button id="win-min" class="win-btn" title="Свернуть"><svg viewBox="0 0 12 12"><path d="M2 6h8" /></svg></button>
       <button id="win-max" class="win-btn" title="Развернуть"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1" /></svg></button>
@@ -60,6 +64,15 @@
     </div>
 
     <button id="zoom-badge" class="zoom-badge hidden" title="Масштаб страницы">100%</button>
+    <!-- «Смотреть в окне» (picture-in-picture). Кнопка появляется только
+         тогда, когда на странице активной вкладки играет видео — состояние
+         присылает main-процесс событием pip:state. -->
+    <button id="pip-button" class="icon-btn hidden" title="Смотреть видео в отдельном окне">
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <rect x="2.5" y="3.5" width="15" height="13" rx="1.6" />
+        <rect x="10.4" y="9.6" width="6.1" height="4.6" rx="0.9" />
+      </svg>
+    </button>
     <button id="menu-button" class="icon-btn" title="Меню Kitsune">
       <svg viewBox="0 0 20 20"><path d="M4 6h12M4 10h12M4 14h12" /></svg>
     </button>
