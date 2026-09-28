@@ -557,9 +557,16 @@ function onAddressInput() {
 
   suggestDebounce = setTimeout(async () => {
     const token = ++suggestToken;
-    const { local, remote } = await api.search.suggest(query);
+    let result;
+    try {
+      result = await api.search.suggest(query);
+    } catch {
+      // Подсказки — необязательная функция. Ошибка сети/IPC не должна
+      // превращать ввод адреса в необработанный rejected Promise.
+      result = { local: [], remote: [] };
+    }
     if (token !== suggestToken) return;
-    renderSuggestions(query, local || [], remote || []);
+    renderSuggestions(query, result && result.local || [], result && result.remote || []);
   }, 90);
 }
 

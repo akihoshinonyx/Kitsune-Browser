@@ -425,6 +425,16 @@ test('searchUrlFor подставляет безопасный поиск и д�
   assert.ok(searchUrlFor('тест', 'неизвестный', 'moderate').includes('duckduckgo.com'));
 });
 
+test('поиск безопасно кодирует пробелы и спецсимволы', () => {
+  const url = toNavigationUrl(' cats & dogs ', 'duckduckgo', 'moderate');
+  assert.ok(url.includes('q=cats%20%26%20dogs'), url);
+  assert.ok(url.endsWith('&kp=-1'), url);
+});
+
+test('пустой ввод не превращается в поисковый запрос', () => {
+  assert.strictEqual(toNavigationUrl('   ', 'duckduckgo', 'moderate'), '');
+});
+
 test('prettyUrl убирает схему и хвостовой слеш', () => {
   assert.strictEqual(prettyUrl('https://example.com/'), 'example.com');
   assert.strictEqual(prettyUrl('https://example.com/a/b?x=1'), 'example.com/a/b?x=1');
@@ -1146,6 +1156,15 @@ test('версия 1.3.2 синхронизирована', () => {
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.3.2');
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.3.2');
   assert.strictEqual(require('../src/shared/version').VERSION, '1.3.2');
+});
+
+test('TabManager получает SettingsStore, а не снимок настроек', () => {
+  const main = readMain();
+  const bootstrap = main.slice(main.indexOf('tabs = new TabManager'), main.indexOf('vault = createPasswordVault'));
+  assert.ok(/\n\s*settings,\s*\r?\n/.test(bootstrap),
+    'смена поисковика должна быть доступна TabManager без перезапуска');
+  assert.ok(!/settings:\s*settings\.settings,/.test(bootstrap),
+    'снимок настроек ломает создание вкладок и навигацию');
 });
 
 test('чувствительные разрешения требуют выбора пользователя и могут быть отозваны', () => {

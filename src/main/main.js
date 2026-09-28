@@ -1372,7 +1372,21 @@ async function getSuggestions(query) {
   try {
     const { net } = require('electron');
     const url = engine.suggestUrl.replace('%s', encodeURIComponent(q));
-    const res = await net.fetch(url, { headers: { Accept: 'application/json' } });
+    // Подсказки не должны блокировать адресную строку при недоступной сети.
+    // AbortController поддерживается Electron/Chromium и также корректно
+    // отменяет запрос при медленном или зависшем DNS.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    let res;
+    try {
+      res = await net.fetch(url, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (!res || !res.ok) return { local: local.slice(0, 8), remote: [] };
     const data = await res.json();
     remote = (data || [])
       .map((item) => (typeof item === 'string' ? item : item && item.phrase))
@@ -1666,7 +1680,9 @@ function bootstrap() {
   createWindow();
 
   tabs = new TabManager(mainWindow, {
-    settings: settings.settings,
+    // TabManager читает настройки динамически через SettingsStore, чтобы
+    // смена поисковика и безопасного поиска применялась без перезапуска.
+    settings,
     adblock,
     history,
     bookmarks,
