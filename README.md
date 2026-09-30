@@ -18,16 +18,16 @@ Kitsune Browser — настольный браузер на Electron с нас�
 
 | Система | Файл из релиза |
 |---|---|
-| Windows 10/11, 64-битная | `Kitsune-Browser-Setup-1.3.0-x64.exe` |
-| Windows 10, 32-битная | `Kitsune-Browser-Setup-1.3.0-ia32.exe` |
-| Без установки (флешка) | `Kitsune-Browser-Portable-1.3.0-<арх>.exe` |
+| Windows 10/11, 64-битная | `Kitsune-Browser-Setup-1.5.0-x64.exe` |
+| Windows 10, 32-битная | `Kitsune-Browser-Setup-1.5.0-ia32.exe` |
+| Без установки (флешка) | `Kitsune-Browser-Portable-1.5.0-<арх>.exe` |
 
 ```powershell
 # обычная установка: мастер, ярлык на рабочем столе, меню «Пуск», запись в «Установка и удаление программ»
-.\Kitsune-Browser-Setup-1.3.0-x64.exe
+.\Kitsune-Browser-Setup-1.5.0-x64.exe
 
 # тихая установка для скриптов
-.\Kitsune-Browser-Setup-1.3.0-x64.exe /S
+.\Kitsune-Browser-Setup-1.5.0-x64.exe /S
 
 # установка скриптом из собранной папки (без установщика)
 powershell -ExecutionPolicy Bypass -File .\tools\install.ps1 -Run
@@ -129,7 +129,7 @@ npm start        # запускает браузер
 часть сайтов (Google, Netflix, банки, видеосервисы) считает такой браузер встроенным движком и
 отдаёт упрощённую или сломанную страницу. Kitsune собирает UA сам (`buildUserAgent()` в
 `src/main/main.js`): сообщает настоящую версию Chromium из `process.versions.chrome` и ставит
-метку `Kitsune/1.0.0` в конец строки — так же, как это делают Edge и Opera.
+метку `Kitsune/1.5.0` в конец строки — так же, как это делают Edge и Opera.
 
 ---
 
@@ -171,6 +171,11 @@ npm start        # запускает браузер
 | `kitsune://blocked` | Статистика блокировки, свои правила, белый список сайтов, загрузка EasyList/EasyPrivacy |
 | `kitsune://passwords` | Менеджер паролей: сохранённые входы, показ/копирование, автозаполнение |
 | `kitsune://about` | Версии Electron/Chromium/Node, путь к папке фильтров |
+
+В разделе «Данные» на `kitsune://settings` можно экспортировать закладки в HTML
+Netscape и историю в JSON, а также импортировать их обратно. Импорт добавляет
+только новые HTTP/HTTPS-записи и перед изменением профиля создаёт резервную копию
+`history.json` или `bookmarks.json` с суффиксом `.backup-<время>`.
 
 ---
 
@@ -264,6 +269,7 @@ brow/
    │  ├─ tabs.js                    # TabManager: WebContentsView на вкладку, инсеты под UI
    │  ├─ adblock.js                 # движок правил Adblock Plus / uBlock Origin
    │  ├─ passwords.js               # менеджер паролей: захват, диалог, автозаполнение
+   │  ├─ data-transfer.js           # перенос закладок и истории с валидацией
    │  ├─ updater.js                 # автообновление из GitHub Releases (два канала)
    │  ├─ ipc-guards.js              # проверки отправителя приватных IPC-каналов
    │  ├─ store.js                   # JSON-хранилища настроек/истории/закладок/паролей
@@ -323,6 +329,7 @@ npm run publish:release → релиз на GitHub (тег v1.0.0), описан
 | `%APPDATA%\Kitsune Browser\settings.json` | Настройки, включая список вкладок последней сессии |
 | `%APPDATA%\Kitsune Browser\history.json` | История (до 5000 записей) |
 | `%APPDATA%\Kitsune Browser\bookmarks.json` | Закладки |
+| `%APPDATA%\Kitsune Browser\*.backup-<время>` | Резервные копии перед импортом |
 | `%APPDATA%\Kitsune Browser\passwords.json` | Менеджер паролей (пароли зашифрованы `safeStorage`) |
 | `%APPDATA%\Kitsune Browser\adblock-user.txt` | Свои правила блокировки и скрытия |
 | `%APPDATA%\Kitsune Browser\adblock-whitelist.json` | Сайты с выключенной блокировкой |

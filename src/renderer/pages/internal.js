@@ -318,6 +318,27 @@ async function initSettings() {
     await refreshStats();
   });
 
+  const transfer = async (action, label) => {
+    try {
+      const result = await action();
+      if (result && result.canceled) return;
+      const count = result && (result.added ?? result.count);
+      const hint = document.createElement('div');
+      hint.className = 'row-hint';
+      hint.textContent = count === undefined ? `${label} выполнен` : `${label} выполнен · записей: ${count}`;
+      hint.style.color = 'var(--green)';
+      hint.style.marginBottom = '12px';
+      document.querySelector('.wrap').prepend(hint);
+      setTimeout(() => hint.remove(), 3500);
+    } catch (err) {
+      await api.confirm('Перенос данных', err && err.message ? err.message : 'Не удалось выполнить перенос данных');
+    }
+  };
+  document.getElementById('export-bookmarks').addEventListener('click', () => transfer(api.bookmarks.export, 'Экспорт закладок'));
+  document.getElementById('import-bookmarks').addEventListener('click', () => transfer(api.bookmarks.import, 'Импорт закладок'));
+  document.getElementById('export-history').addEventListener('click', () => transfer(api.history.export, 'Экспорт истории'));
+  document.getElementById('import-history').addEventListener('click', () => transfer(api.history.import, 'Импорт истории'));
+
   /* ── Обновления ── */
 
   const updateInfo = document.getElementById('update-info');

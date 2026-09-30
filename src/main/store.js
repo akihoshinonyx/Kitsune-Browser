@@ -149,6 +149,31 @@ class HistoryStore extends Store {
     this.data.items = this.data.items.filter((it) => it.url !== url);
     this.save();
   }
+
+  importEntries(entries) {
+    const existing = new Set(this.data.items.map((item) => `${item.url}\u0000${Number(item.time) || 0}`));
+    let added = 0;
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      if (!entry || !entry.url) continue;
+      const numericTime = Number(entry.time);
+      const time = Number.isFinite(numericTime) ? numericTime : Date.now();
+      const key = `${entry.url}\u0000${time}`;
+      if (existing.has(key)) continue;
+      existing.add(key);
+      this.data.items.push({
+        url: entry.url,
+        title: entry.title || entry.url,
+        time,
+        visits: Math.max(1, Number(entry.visits) || 1)
+      });
+      added += 1;
+    }
+    if (added > 0) {
+      if (this.data.items.length > 5000) this.data.items.splice(0, this.data.items.length - 5000);
+      this.save();
+    }
+    return added;
+  }
 }
 
 class BookmarkStore extends Store {
@@ -185,6 +210,20 @@ class BookmarkStore extends Store {
     }
     this.add({ url, title });
     return true;
+  }
+
+  importEntries(entries) {
+    const existing = new Set(this.data.items.map((item) => item.url));
+    const additions = [];
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      if (!entry || !entry.url || existing.has(entry.url)) continue;
+      existing.add(entry.url);
+      additions.push({ url: entry.url, title: entry.title || entry.url, time: Date.now() });
+    }
+    if (!additions.length) return 0;
+    this.data.items = additions.concat(this.data.items);
+    this.save();
+    return additions.length;
   }
 }
 

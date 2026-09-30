@@ -400,9 +400,11 @@ app.whenReady().then(() => {
       const settingsUpdates = await inTab(
         win,
         `!!document.getElementById('check-updates') && !!document.getElementById('auto-update') &&
-         !document.getElementById('update-notes').classList.contains('hidden')`
+         !document.getElementById('update-notes').classList.contains('hidden') &&
+         !!document.getElementById('export-bookmarks') && !!document.getElementById('import-bookmarks') &&
+         !!document.getElementById('export-history') && !!document.getElementById('import-history')`
       );
-      check('в настройках есть раздел обновлений', settingsUpdates === true, String(settingsUpdates));
+      check('в настройках есть обновления и перенос данных', settingsUpdates === true, String(settingsUpdates));
 
       await win.webContents.executeJavaScript(`window.kitsune.tabs.navigate('kitsune://about')`);
       await wait(1000);

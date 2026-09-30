@@ -143,7 +143,9 @@ function exposeBrowserApi() {
     history: {
       list: (options) => invoke('history:list', options || {}),
       clear: () => invoke('history:clear'),
-      remove: (url) => invoke('history:remove', url)
+      remove: (url) => invoke('history:remove', url),
+      export: () => invoke('history:export'),
+      import: () => invoke('history:import')
     },
 
     /* ── Закладки ── */
@@ -152,7 +154,9 @@ function exposeBrowserApi() {
       toggle: (payload) => invoke('bookmarks:toggle', payload),
       remove: (url) => invoke('bookmarks:remove', url),
       has: (url) => invoke('bookmarks:has', url),
-      openAll: () => invoke('bookmarks:open-all')
+      openAll: () => invoke('bookmarks:open-all'),
+      export: () => invoke('bookmarks:export'),
+      import: () => invoke('bookmarks:import')
     },
 
     /* ── Поиск на странице ── */

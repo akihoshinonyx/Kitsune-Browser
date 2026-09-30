@@ -103,6 +103,7 @@ button.btn.ghost {
 button.btn.ghost:hover { background: var(--bg-hover); color: var(--text); }
 button.btn.danger { background: transparent; border: 1px solid var(--red); color: var(--red); font-weight: 500; }
 button.btn.danger:hover { background: rgba(239, 90, 90, 0.14); }
+.data-actions { display: flex; gap: 8px; flex: 0 0 auto; }
 
 /* Переключатель */
 .switch { position: relative; width: 42px; height: 24px; flex: 0 0 42px; }
@@ -229,4 +230,12 @@ button.btn.small { padding: 5px 10px; font-size: 12px; }
   background: var(--bg-soft);
   font-size: 11.5px;
   color: var(--text-dim);
+}
+
+@media (max-width: 620px) {
+  .wrap { padding-left: 16px; padding-right: 16px; }
+  .row { align-items: stretch; flex-direction: column; gap: 9px; }
+  select, input[type="text"], input[type="search"] { width: 100%; min-width: 0; }
+  .data-actions { width: 100%; }
+  .data-actions .btn { flex: 1 1 0; }
 }

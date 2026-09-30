@@ -568,10 +568,52 @@ test('BookmarkStore: add/has/toggle/remove', () => {
   assert.strictEqual(store.remove('https://new.test/'), false);
 });
 
+test('импорт истории сохраняет разные визиты и не дублирует повторный импорт', () => {
+  const store = new HistoryStore();
+  store.clear();
+  const entries = [
+    { url: 'https://visit.test/', title: 'Первый визит', time: 1000, visits: 1 },
+    { url: 'https://visit.test/', title: 'Второй визит', time: 2000, visits: 3 }
+  ];
+  assert.strictEqual(store.importEntries(entries), 2);
+  assert.strictEqual(store.importEntries(entries), 0);
+  assert.deepStrictEqual(store.all().map((item) => item.time), [1000, 2000]);
+  assert.strictEqual(store.all()[1].visits, 3);
+  store.clear();
+});
+
+test('пакетный импорт закладок сохраняет порядок и пропускает существующие URL', () => {
+  const store = new BookmarkStore();
+  store.list().slice().forEach((item) => store.remove(item.url));
+  const entries = [
+    { url: 'https://first.test/', title: 'Первый' },
+    { url: 'https://second.test/', title: 'Второй' },
+    { url: 'https://first.test/', title: 'Повтор' }
+  ];
+  assert.strictEqual(store.importEntries(entries), 2);
+  assert.strictEqual(store.importEntries(entries), 0);
+  assert.deepStrictEqual(store.list().map((item) => item.url), ['https://first.test/', 'https://second.test/']);
+  store.list().slice().forEach((item) => store.remove(item.url));
+});
+
 test('Store сохраняет резервную копию повреждённого JSON-профиля', () => {
   const storeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'store.js'), 'utf8');
   assert.ok(storeSrc.includes('.corrupt-${Date.now()}'), 'повреждённый JSON должен сохраняться отдельно');
   assert.ok(storeSrc.includes("err.name === 'SyntaxError'"), 'резервная копия нужна только для ошибки разбора JSON');
+});
+
+test('перенос закладок и истории использует безопасные переносимые форматы', () => {
+  const transfer = require('../src/main/data-transfer');
+  const html = transfer.bookmarksToHtml([{ url: 'https://example.com/?a=1&b=2', title: 'Пример' }]);
+  assert.ok(html.includes('NETSCAPE-Bookmark-file'), 'закладки должны быть совместимы с Netscape HTML');
+  assert.deepStrictEqual(transfer.parseBookmarksHtml(html)[0], { url: 'https://example.com/?a=1&b=2', title: 'Пример' });
+  assert.throws(() => transfer.parseBookmarksHtml('<html>нет закладок</html>'), /Netscape/);
+  const json = transfer.historyToJson([{ url: 'https://example.com/', title: 'Пример', visits: 2 }]);
+  assert.strictEqual(transfer.parseHistoryJson(json)[0].visits, 2);
+  assert.throws(() => transfer.parseHistoryJson('{"items":[{"url":"file:///secret"}]}'), /подходящих/);
+  assert.deepStrictEqual(transfer.parseBookmarksHtml(transfer.bookmarksToHtml([])), []);
+  assert.deepStrictEqual(transfer.parseHistoryJson(transfer.historyToJson([])), []);
+  assert.strictEqual(transfer.MAX_IMPORT_BYTES, 8 * 1024 * 1024);
 });
 
 suite('Генератор иконок (tools/make-icon.js)');
@@ -900,6 +942,7 @@ test('все ключевые файлы на месте', () => {
     'src/main/tabs.js',
     'src/main/adblock.js',
     'src/main/store.js',
+    'src/main/data-transfer.js',
     'src/main/url-utils.js',
     'src/main/passwords.js',
     'src/main/ipc-guards.js',
@@ -1163,6 +1206,17 @@ test('полный API браузера недоступен обычным са
   assert.ok(/if \(isInternalPage\(\)\) exposeBrowserApi\(\)/.test(src));
 });
 
+test('история, закладки и перенос данных защищены от вызова обычным сайтом', () => {
+  const main = readMain();
+  assert.ok(/history:list', \(event/.test(main) && /if \(!isTrustedSender\(event\)\) return \[\];/.test(main));
+  assert.ok(/bookmarks:list', \(event/.test(main) && /isTrustedSender\(event\) \? bookmarks\.list\(\) : \[\]/.test(main));
+  for (const channel of ['history:export', 'history:import', 'bookmarks:export', 'bookmarks:import']) {
+    const at = main.indexOf(`'${channel}'`);
+    assert.ok(at >= 0, `нет IPC-канала ${channel}`);
+    assert.ok(main.slice(at, at + 180).includes('isTrustedSender(event)'), `${channel} не проверяет отправителя`);
+  }
+});
+
 /* ─────────────────────────── Автообновление ─────────────────────────── */
 
 suite('Загрузки и жизненный цикл вкладок');
@@ -1189,10 +1243,10 @@ test('активной считается только прикреплённа�
   assert.ok(/!t\.view\.webContents\.isDestroyed\(\)/.test(src));
 });
 
-test('версия 1.4.0 синхронизирована', () => {
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.4.0');
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.4.0');
-  assert.strictEqual(require('../src/shared/version').VERSION, '1.4.0');
+test('версия 1.5.0 синхронизирована', () => {
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.5.0');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.5.0');
+  assert.strictEqual(require('../src/shared/version').VERSION, '1.5.0');
 });
 
 test('TabManager получает SettingsStore, а не снимок настроек', () => {

@@ -27,6 +27,7 @@ const { TabManager, CHROME_HEIGHT } = require('./tabs');
 const { toNavigationUrl, isInternalUrl } = require('./url-utils');
 const { hostnameOf } = require('./adblock');
 const { searchUrlFor } = require('./url-utils');
+const { bookmarksToHtml, parseBookmarksHtml, historyToJson, parseHistoryJson, MAX_IMPORT_BYTES } = require('./data-transfer');
 
 const SESSION_PARTITION = 'persist:kitsune';
 
@@ -53,6 +54,34 @@ function writeMainLog(level, message) {
   } catch {
     /* журнал не должен мешать запуску */
   }
+}
+
+/** Делает копию пользовательского файла перед импортом новых данных. */
+function backupDataFile(fileName) {
+  const source = path.join(app.getPath('userData'), fileName);
+  if (!fs.existsSync(source)) return '';
+  const target = `${source}.backup-${Date.now()}`;
+  try {
+    fs.copyFileSync(source, target);
+    return target;
+  } catch (err) {
+    writeMainLog('WARN', `Не удалось создать резервную копию ${fileName}: ${err.message}`);
+    return null;
+  }
+}
+
+function readImportFile(filePath) {
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    throw new Error('Не удалось прочитать выбранный файл');
+  }
+  if (!stat.isFile()) throw new Error('Выбранный путь не является файлом');
+  if (stat.size > MAX_IMPORT_BYTES) {
+    throw new Error(`Файл слишком большой. Максимальный размер импорта: ${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)} МБ`);
+  }
+  return fs.readFileSync(filePath, 'utf8');
 }
 
 function prepareStartupRecovery() {
@@ -1555,27 +1584,85 @@ function registerIpcExtras() {
   handle('ui:app-menu-items', () => collectMenuLabels(buildAppMenu()));
 
   // ── История ──
-  handle('history:list', (_e, { query, limit } = {}) => {
+  handle('history:list', (event, { query, limit } = {}) => {
+    if (!isTrustedSender(event)) return [];
     if (query) return history.search(query, limit || 50);
     return history.all().slice(-(limit || 300)).reverse();
   });
-  handle('history:clear', () => {
+  handle('history:clear', (event) => {
+    if (!isTrustedSender(event)) return false;
     history.clear();
     return true;
   });
-  handle('history:remove', (_e, url) => {
+  handle('history:remove', (event, url) => {
+    if (!isTrustedSender(event)) return false;
     history.remove(url);
     return true;
   });
+  handle('history:export', async (event) => {
+    if (!isTrustedSender(event)) return { canceled: true, reason: 'forbidden' };
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Экспорт истории',
+      defaultPath: path.join(app.getPath('documents'), 'kitsune-history.json'),
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    fs.writeFileSync(result.filePath, historyToJson(history.all()), 'utf8');
+    return { canceled: false, filePath: result.filePath, count: history.all().length };
+  });
+  handle('history:import', async (event) => {
+    if (!isTrustedSender(event)) return { canceled: true, reason: 'forbidden' };
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Импорт истории',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    });
+    if (result.canceled || !result.filePaths[0]) return { canceled: true };
+    const filePath = result.filePaths[0];
+    const entries = parseHistoryJson(readImportFile(filePath));
+    if (backupDataFile('history.json') === null) {
+      throw new Error('Не удалось создать резервную копию текущей истории');
+    }
+    const added = history.importEntries(entries);
+    history.flush();
+    return { canceled: false, count: entries.length, added };
+  });
 
   // ── Закладки ──
-  handle('bookmarks:list', () => bookmarks.list());
-  handle('bookmarks:toggle', (_e, payload) => bookmarks.toggle(payload || {}));
-  handle('bookmarks:remove', (_e, url) => bookmarks.remove(url));
-  handle('bookmarks:has', (_e, url) => bookmarks.has(url));
-  handle('bookmarks:open-all', () => {
+  handle('bookmarks:list', (event) => isTrustedSender(event) ? bookmarks.list() : []);
+  handle('bookmarks:toggle', (event, payload) => isTrustedSender(event) ? bookmarks.toggle(payload || {}) : false);
+  handle('bookmarks:remove', (event, url) => isTrustedSender(event) ? bookmarks.remove(url) : false);
+  handle('bookmarks:has', (event, url) => isTrustedSender(event) ? bookmarks.has(url) : false);
+  handle('bookmarks:open-all', (event) => {
+    if (!isTrustedSender(event)) return false;
     for (const b of bookmarks.list()) tabs.create({ url: b.url, background: true });
     return true;
+  });
+  handle('bookmarks:export', async (event) => {
+    if (!isTrustedSender(event)) return { canceled: true, reason: 'forbidden' };
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Экспорт закладок',
+      defaultPath: path.join(app.getPath('documents'), 'kitsune-bookmarks.html'),
+      filters: [{ name: 'HTML-закладки', extensions: ['html'] }]
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    fs.writeFileSync(result.filePath, bookmarksToHtml(bookmarks.list()), 'utf8');
+    return { canceled: false, filePath: result.filePath, count: bookmarks.list().length };
+  });
+  handle('bookmarks:import', async (event) => {
+    if (!isTrustedSender(event)) return { canceled: true, reason: 'forbidden' };
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Импорт закладок',
+      properties: ['openFile'],
+      filters: [{ name: 'HTML-закладки', extensions: ['html', 'htm'] }]
+    });
+    if (result.canceled || !result.filePaths[0]) return { canceled: true };
+    const entries = parseBookmarksHtml(readImportFile(result.filePaths[0]));
+    if (backupDataFile('bookmarks.json') === null) {
+      throw new Error('Не удалось создать резервную копию текущих закладок');
+    }
+    const added = bookmarks.importEntries(entries);
+    return { canceled: false, count: entries.length, added };
   });
 
   // ── Поиск на странице ──
