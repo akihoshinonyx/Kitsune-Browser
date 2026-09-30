@@ -241,19 +241,27 @@ class TabManager extends EventEmitter {
     });
 
     wc.setWindowOpenHandler(({ url, disposition }) => {
-      // $popup — правило фильтра прямо запрещает это всплывающее окно
+      // Chromium сообщает foreground-tab/background-tab для обычного открытия
+      // ссылки через Ctrl-клик, СКМ и target="_blank". Это не рекламный popup:
+      // блокировка всплывающих окон не должна ломать такие пользовательские
+      // переходы.
+      const tabDisposition = disposition === 'foreground-tab' || disposition === 'background-tab';
+      if (tabDisposition) {
+        this.create({ url, background: disposition === 'background-tab' });
+        return { action: 'deny' };
+      }
+      // $popup — правило фильтра прямо запрещает настоящее всплывающее окно.
       const action = this.ctx.adblock.getAction({ url, type: 'popup', tabUrl: tab.url, tabId: id });
       if (action.block) {
         this.ctx.adblock.recordBlocked({ tabId: id, url, type: 'popup' });
         return { action: 'deny' };
       }
+      if (!this.settings.blockPopups) {
+        this.create({ url, background: false });
+      }
       // Не разрешаем Chromium создавать отдельные BrowserWindow для сайта:
       // такое окно обходит управление вкладками, preload и жизненный цикл
-      // Kitsune. Даже при выключенной блокировке popup открываем ссылку в
-      // обычной вкладке браузера.
-      if (!this.settings.blockPopups) {
-        this.create({ url, background: disposition === 'background-tab' });
-      }
+      // Kitsune. Разрешённые ссылки уже перенаправлены в обычную вкладку.
       return { action: 'deny' };
     });
 

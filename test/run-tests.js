@@ -1243,10 +1243,10 @@ test('активной считается только прикреплённа�
   assert.ok(/!t\.view\.webContents\.isDestroyed\(\)/.test(src));
 });
 
-test('версия 1.5.0 синхронизирована', () => {
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.5.0');
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.5.0');
-  assert.strictEqual(require('../src/shared/version').VERSION, '1.5.0');
+test('версия 1.5.1 синхронизирована', () => {
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.5.1');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.5.1');
+  assert.strictEqual(require('../src/shared/version').VERSION, '1.5.1');
 });
 
 test('TabManager получает SettingsStore, а не снимок настроек', () => {
@@ -1282,7 +1282,11 @@ test('чувствительные разрешения сайтов не выд
 test('popup-ссылки остаются под управлением вкладок Kitsune', () => {
   const tabs = readTabs();
   assert.ok(/setWindowOpenHandler/.test(tabs));
+  assert.ok(/if \(tabDisposition\) \{[\s\S]*?return \{ action: 'deny' \};/.test(tabs));
   assert.ok(/return \{ action: 'deny' \}/.test(tabs));
+  assert.ok(/disposition === 'foreground-tab' \|\| disposition === 'background-tab'/.test(tabs));
+  assert.ok(/if \(tabDisposition\)/.test(tabs));
+  assert.ok(/if \(!this\.settings\.blockPopups\)/.test(tabs));
   assert.ok(/this\.create\(\{ url, background: disposition === 'background-tab' \}\)/.test(tabs));
   assert.ok(!/return \{ action: 'allow' \}/.test(tabs));
 });
