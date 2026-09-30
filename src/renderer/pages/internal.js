@@ -27,46 +27,77 @@ async function initHome() {
   const form = document.getElementById('search-form');
   const input = document.getElementById('q');
 
-  const info = await api.getAppInfo();
-  const engine = (info.searchEngines || []).find((s) => s.id === info.settings.searchEngine);
-  if (engine) input.placeholder = `Поиск в ${engine.name}`;
+  // Навешиваем действия до запросов к main-процессу. Если история или
+  // статистика временно недоступны, новая вкладка всё равно должна искать и
+  // открывать быстрые ссылки.
+  const navigateHome = (target) => {
+    const value = String(target || '').trim();
+    if (!value) return;
+    let result;
+    try {
+      result = api.tabs.navigate(value);
+    } catch {
+      return;
+    }
+    Promise.resolve(result).catch(() => {
+      // IPC может завершиться ошибкой во время закрытия вкладки — это не
+      // должно превращаться в необработанное исключение страницы.
+    });
+  };
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const q = input.value.trim();
-    if (q) api.tabs.navigate(q);
+    navigateHome(q);
   });
 
   document.getElementById('go-search').addEventListener('click', () => {
-    const q = input.value.trim();
-    if (q) api.tabs.navigate(q);
+    navigateHome(input.value);
   });
 
   document.getElementById('go-lucky').addEventListener('click', () => {
     const q = input.value.trim();
-    if (q) api.tabs.navigate(`https://duckduckgo.com/?q=${encodeURIComponent(q)}&kl=wt-wt`);
+    if (q) navigateHome(`https://duckduckgo.com/?q=${encodeURIComponent(q)}&kl=wt-wt`);
   });
 
+  try {
+    const info = await api.getAppInfo();
+    const engine = (info.searchEngines || []).find((s) => s.id === info.settings.searchEngine);
+    if (engine) input.placeholder = `Поиск в ${engine.name}`;
+  } catch {
+    // Оставляем безопасный placeholder из HTML.
+  }
+
   // Статистика блокировщика
-  const stats = await api.adblock.stats();
   const foot = document.getElementById('stats');
-  foot.textContent = '';
-  if (stats.enabled) {
-    foot.append('Блокировщик рекламы активен · правил: ');
-    const b1 = document.createElement('b');
-    b1.textContent = String(stats.rules);
-    foot.appendChild(b1);
-    foot.append(' · заблокировано: ');
-    const b2 = document.createElement('b');
-    b2.textContent = String(stats.blockedTotal);
-    foot.appendChild(b2);
-  } else {
-    foot.append('Блокировщик рекламы выключен · включить можно в настройках');
+  try {
+    const stats = await api.adblock.stats();
+    foot.textContent = '';
+    if (stats.enabled) {
+      foot.append('Блокировщик рекламы активен · правил: ');
+      const b1 = document.createElement('b');
+      b1.textContent = String(stats.rules);
+      foot.appendChild(b1);
+      foot.append(' · заблокировано: ');
+      const b2 = document.createElement('b');
+      b2.textContent = String(stats.blockedTotal);
+      foot.appendChild(b2);
+    } else {
+      foot.append('Блокировщик рекламы выключен · включить можно в настройках');
+    }
+  } catch {
+    // Статистика не является условием работы поиска.
   }
 
   // Быстрые ссылки: частые сайты из истории
   const hosts = new Map();
-  for (const item of await api.history.list({ limit: 300 })) {
+  let historyItems = [];
+  try {
+    historyItems = await api.history.list({ limit: 300 });
+  } catch {
+    historyItems = [];
+  }
+  for (const item of historyItems) {
     if (!item.url || item.url.startsWith('kitsune://')) continue;
     let host;
     try {
@@ -85,6 +116,7 @@ async function initHome() {
 
   for (const site of top) {
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'shortcut';
     btn.title = site.url;
 
@@ -104,7 +136,7 @@ async function initHome() {
 
     btn.appendChild(fav);
     btn.appendChild(lbl);
-    btn.addEventListener('click', () => api.tabs.navigate(site.url));
+    btn.addEventListener('click', () => navigateHome(site.url));
     box.appendChild(btn);
   }
 

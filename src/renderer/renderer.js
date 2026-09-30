@@ -278,6 +278,7 @@ function updateTabNode(entry, tab) {
   const { node, title, badge } = entry;
 
   node.classList.toggle('active', tab.id === ui.state.activeId);
+  node.classList.toggle('pinned', !!tab.pinned);
 
   const label = tab.title || prettyUrl(tab.url) || 'Новая вкладка';
   if (title.textContent !== label) title.textContent = label;

@@ -23,7 +23,16 @@ class Store {
       const raw = fs.readFileSync(this.filePath, 'utf8');
       const parsed = JSON.parse(raw);
       return { ...this.defaults, ...parsed };
-    } catch {
+    } catch (err) {
+      // Сохраняем повреждённый JSON, чтобы восстановление defaults не
+      // уничтожало единственную копию пользовательских данных.
+      if (err && err.name === 'SyntaxError' && fs.existsSync(this.filePath)) {
+        try {
+          fs.copyFileSync(this.filePath, `${this.filePath}.corrupt-${Date.now()}`);
+        } catch {
+          /* восстановление defaults всё равно должно продолжиться */
+        }
+      }
       return { ...this.defaults };
     }
   }

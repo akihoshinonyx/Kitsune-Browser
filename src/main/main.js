@@ -43,6 +43,39 @@ let downloads = null;
 let quitting = false;
 let sessionRestored = false;
 let findInPageQuery = '';
+let startupMarker = '';
+
+function writeMainLog(level, message) {
+  try {
+    const file = path.join(app.getPath('userData'), 'logs', 'main.log');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, `${new Date().toISOString()} [${level}] ${message}\n`, 'utf8');
+  } catch {
+    /* журнал не должен мешать запуску */
+  }
+}
+
+function prepareStartupRecovery() {
+  startupMarker = path.join(app.getPath('userData'), 'startup.lock');
+  const recovered = fs.existsSync(startupMarker);
+  if (recovered) writeMainLog('WARN', 'Обнаружено нештатное завершение; сессия пропущена.');
+  try {
+    fs.writeFileSync(startupMarker, String(Date.now()), 'utf8');
+  } catch {
+    /* безопасный старт остаётся доступным и без marker-файла */
+  }
+  return recovered;
+}
+
+process.on('uncaughtException', (err) => {
+  writeMainLog('ERROR', `uncaughtException: ${err && err.stack ? err.stack : err}`);
+  // После необработанного исключения состояние main-процесса ненадёжно.
+  // Завершаемся, оставляя startup.lock для безопасного следующего запуска.
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  writeMainLog('ERROR', `unhandledRejection: ${reason && reason.stack ? reason.stack : reason}`);
+});
 
 // Разрешения «только в этот раз» живут только до закрытия вкладки.
 const temporarySitePermissions = new Map();
@@ -1115,6 +1148,7 @@ function showTabContextMenu(event, id) {
     { type: 'separator' },
     { label: 'Обновить', click: () => tabs.reload(tab.id) },
     { label: 'Дублировать вкладку', click: () => tabs.duplicate(tab.id) },
+    { label: tab.pinned ? 'Открепить вкладку' : 'Закрепить вкладку', click: () => tabs.togglePinned(tab.id) },
     { type: 'separator' },
     { label: 'Закрыть вкладку', click: () => tabs.close(tab.id) },
     {
@@ -1274,6 +1308,7 @@ function registerIpc() {
   handle('tab:activate', (_e, id) => tabs.activate(id === undefined ? tabs.activeId : id));
   handle('tab:reorder', (_e, { from, to }) => tabs.reorder(from, to));
   handle('tab:duplicate', (_e, id) => tabs.duplicate(id === undefined ? tabs.activeId : id));
+  handle('tab:toggle-pinned', (_e, id) => tabs.togglePinned(id === undefined ? tabs.activeId : id));
   handle('tab:navigate', (_e, { id, input }) => tabs.navigate(id || tabs.activeId, input));
   handle('tab:back', (_e, id) => tabs.goBack(id || tabs.activeId));
   handle('tab:forward', (_e, id) => tabs.goForward(id || tabs.activeId));
@@ -1663,6 +1698,7 @@ function runDiagnostics() {
 /* ────────────────────────── Запуск приложения ────────────────────────── */
 
 function bootstrap() {
+  const safeStart = prepareStartupRecovery();
   settings = new SettingsStore();
   history = new HistoryStore();
   bookmarks = new BookmarkStore();
@@ -1713,8 +1749,9 @@ function bootstrap() {
   updater.start();
 
   const lastSession = settings.get('lastSession', []);
-  const restored = settings.get('restoreTabs', true) && tabs.restoreSession(lastSession);
+  const restored = !safeStart && settings.get('restoreTabs', true) && tabs.restoreSession(lastSession);
   if (!restored) tabs.create({ url: settings.get('homePage', 'kitsune://home') });
+  if (safeStart) send('ui:toast', { text: 'Безопасный запуск: предыдущая сессия не восстановлена' });
 
   mainWindow.webContents.on('did-finish-load', () => {
     sessionRestored = true;
@@ -1780,5 +1817,10 @@ if (!gotLock) {
     // История и пароли пишутся с задержкой — при выходе сбрасываем на диск
     if (history) history.flush();
     if (passwords) passwords.flush();
+    try {
+      if (startupMarker) fs.rmSync(startupMarker, { force: true });
+    } catch {
+      /* ignore */
+    }
   });
 }

@@ -87,10 +87,16 @@ class TabManager extends EventEmitter {
   }
 
   get settings() {
-    return this.ctx.settings.settings;
+    const source = this.ctx && this.ctx.settings;
+    // При обновлении приложения старый app.asar может на короткое время
+    // смешать новый TabManager со старым bootstrap. Поддерживаем оба формата:
+    // SettingsStore и снимок настроек, чтобы ошибка не роняла старт браузера.
+    if (!source) return { ...DEFAULT_SETTINGS };
+    if (typeof source.get === 'function') return source.settings || { ...DEFAULT_SETTINGS };
+    return source;
   }
 
-  create({ url, active = true, background = false } = {}) {
+  create({ url, active = true, background = false, pinned = false } = {}) {
     const settings = this.settings;
     const target = url || settings.homePage || DEFAULT_SETTINGS.homePage;
 
@@ -120,12 +126,15 @@ class TabManager extends EventEmitter {
       zoom: 0, // 0 = 100 %, значение хранится как "уровень" Chromium
       error: null,
       createdAt: Date.now(),
+      pinned: !!pinned,
       attached: false,
       pip: { available: false, playing: false, inPip: false }
     };
 
     this.tabs.set(tab.id, tab);
-    this.order.push(tab.id);
+    const firstUnpinned = this.order.findIndex((id) => !this.tabs.get(id)?.pinned);
+    if (tab.pinned && firstUnpinned >= 0) this.order.splice(firstUnpinned, 0, tab.id);
+    else this.order.push(tab.id);
     this._attachEvents(tab);
 
     this.win.contentView.addChildView(view);
@@ -444,7 +453,7 @@ class TabManager extends EventEmitter {
     this.ctx.adblock.clearTabStats(id);
 
     // 2) Запоминаем адрес, чтобы вернуть вкладку по Ctrl+Shift+T
-    if (remember && tab.url && !isInternalUrl(tab.url)) {
+    if (remember && !tab.pinned && tab.url && !isInternalUrl(tab.url)) {
       this.closedStack.push({ url: tab.url, title: tab.title || tab.url });
       if (this.closedStack.length > MAX_CLOSED) this.closedStack.shift();
     }
@@ -519,7 +528,7 @@ class TabManager extends EventEmitter {
   /** Закрыть все вкладки, кроме указанной */
   closeOthers(keepId) {
     for (const id of [...this.order]) {
-      if (id !== keepId) this.close(id);
+      if (id !== keepId && !this.tabs.get(id)?.pinned) this.close(id);
     }
   }
 
@@ -527,7 +536,9 @@ class TabManager extends EventEmitter {
   closeToRight(id) {
     const index = this.order.indexOf(id);
     if (index < 0) return;
-    for (const other of this.order.slice(index + 1)) this.close(other);
+    for (const other of this.order.slice(index + 1)) {
+      if (!this.tabs.get(other)?.pinned) this.close(other);
+    }
   }
 
   /**
@@ -556,7 +567,19 @@ class TabManager extends EventEmitter {
   duplicate(id) {
     const tab = this.tabs.get(id);
     if (!tab) return null;
-    return this.create({ url: tab.url, background: true });
+    return this.create({ url: tab.url, background: true, pinned: tab.pinned });
+  }
+
+  togglePinned(id) {
+    const tab = this.tabs.get(id);
+    if (!tab) return false;
+    tab.pinned = !tab.pinned;
+    this.order = this.order.filter((tabId) => tabId !== id);
+    const firstUnpinned = this.order.findIndex((tabId) => !this.tabs.get(tabId)?.pinned);
+    if (tab.pinned && firstUnpinned >= 0) this.order.splice(firstUnpinned, 0, id);
+    else this.order.push(id);
+    this.emitState();
+    return tab.pinned;
   }
 
   /** Масштаб страницы: delta в «шагах» Chromium (-1 = −20 %, +1 = +20 %) */
@@ -638,6 +661,7 @@ class TabManager extends EventEmitter {
         favicon: t.favicon,
         loading: t.loading,
         blocked: t.blocked,
+        pinned: !!t.pinned,
         hasError: !!t.error
       }));
 
@@ -716,16 +740,20 @@ class TabManager extends EventEmitter {
     this.ctx.send('tabs:state', state);
   }
 
-  restoreSession(urls) {
-    if (!Array.isArray(urls) || !urls.length) return false;
-    for (const url of urls) {
+  restoreSession(entries) {
+    if (!Array.isArray(entries) || !entries.length) return false;
+    let activeId = null;
+    for (const entry of entries) {
       try {
-        this.create({ url, active: false, background: true });
+        const value = typeof entry === 'string' ? { url: entry } : entry;
+        if (!value || !value.url) continue;
+        const tab = this.create({ url: value.url, pinned: value.pinned, active: false, background: true });
+        if (value.active) activeId = tab.id;
       } catch {
         /* пропускаем некорректный url */
       }
     }
-    if (this.order.length) this.activate(this.order[this.order.length - 1]);
+    if (this.order.length) this.activate(activeId || this.order[this.order.length - 1]);
     return true;
   }
 
@@ -733,7 +761,7 @@ class TabManager extends EventEmitter {
     return this.order
       .map((id) => this.tabs.get(id))
       .filter((t) => t && t.url && !isInternalUrl(t.url))
-      .map((t) => t.url);
+      .map((t) => ({ url: t.url, pinned: !!t.pinned, active: t.id === this.activeId }));
   }
 
   destroyAll() {

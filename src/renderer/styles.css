@@ -211,6 +211,9 @@ svg {
 .tab-close:hover { background: rgba(255, 255, 255, 0.16); opacity: 1; }
 .tab-close:active { background: var(--red); color: #fff; }
 .tab-close svg { width: 11px; height: 11px; stroke-width: 1.9; }
+.tab.pinned { max-width: 46px; flex: 0 0 46px; }
+.tab.pinned .tab-title, .tab.pinned .tab-blocked { display: none; }
+.tab.pinned .tab-close { display: none; }
 
 /* ── Перетаскивание вкладок ── */
 

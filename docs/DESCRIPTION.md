@@ -5,7 +5,7 @@
 uBlock Origin), менеджером паролей и приватным поиском DuckDuckGo по умолчанию.
 Без телеметрии, без облачных сервисов, без аккаунтов.
 
-* Текущая версия: **1.0.0**
+* Текущая версия: **1.4.0**
 * Репозиторий: <https://github.com/akihoshinonyx/Kitsune-Browser>
 * Релизы (установщики): <https://github.com/akihoshinonyx/Kitsune-Browser/releases>
 * Лицензия: MIT

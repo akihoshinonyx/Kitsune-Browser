@@ -568,6 +568,12 @@ test('BookmarkStore: add/has/toggle/remove', () => {
   assert.strictEqual(store.remove('https://new.test/'), false);
 });
 
+test('Store сохраняет резервную копию повреждённого JSON-профиля', () => {
+  const storeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'store.js'), 'utf8');
+  assert.ok(storeSrc.includes('.corrupt-${Date.now()}'), 'повреждённый JSON должен сохраняться отдельно');
+  assert.ok(storeSrc.includes("err.name === 'SyntaxError'"), 'резервная копия нужна только для ошибки разбора JSON');
+});
+
 suite('Генератор иконок (tools/make-icon.js)');
 
 test('encodePng создаёт валидный PNG', () => {
@@ -941,6 +947,17 @@ test('renderer общается с движком только через window
   assert.ok(!src.includes("require('electron')"), 'renderer не должен требовать electron напрямую');
 });
 
+test('домашняя страница навешивает поиск и быстрые ссылки до фоновых IPC-запросов', () => {
+  const internal = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'pages', 'internal.js'), 'utf8');
+  const home = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'pages', 'home.html'), 'utf8');
+  const handlers = internal.indexOf("form.addEventListener('submit'");
+  const firstOptionalRequest = internal.indexOf('await api.getAppInfo()');
+  assert.ok(handlers >= 0 && handlers < firstOptionalRequest, 'поиск должен быть доступен до getAppInfo');
+  assert.ok(internal.includes("btn.type = 'button'"), 'быстрые ссылки не должны отправлять форму');
+  assert.ok(home.includes('type="button"'), 'кнопки домашней страницы должны иметь явный type');
+  assert.ok(internal.includes('navigateHome(site.url)'), 'быстрые ссылки должны использовать навигацию вкладки');
+});
+
 test('JS-файлы проекта синтаксически корректны', () => {
   const targets = [
     'src/main/main.js',
@@ -998,6 +1015,26 @@ test('closeOthers / closeToRight / reopenClosed реализованы', () => {
   for (const method of ['closeOthers(', 'closeToRight(', 'reopenClosed(', '_disposeView(']) {
     assert.ok(src.includes(method), `нет метода ${method}`);
   }
+});
+
+test('закреплённые вкладки сохраняются, остаются слева и защищены массовым закрытием', () => {
+  const tabs = readTabs();
+  const main = readMain();
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload', 'preload.js'), 'utf8');
+  assert.ok(tabs.includes('togglePinned(id)'), 'нет переключения закреплённой вкладки');
+  assert.ok(tabs.includes('pinned: !!t.pinned'), 'признак закрепления должен попасть в UI-состояние');
+  assert.ok(tabs.includes("!this.tabs.get(id)?.pinned"), 'массовое закрытие не должно затрагивать закреплённые вкладки');
+  assert.ok(tabs.includes('typeof entry === \'string\''), 'старая сессия из URL должна оставаться совместимой');
+  assert.ok(main.includes("handle('tab:toggle-pinned'"), 'действие закрепления должно быть доступно через IPC');
+  assert.ok(preload.includes("togglePinned: (id)"), 'preload должен открыть безопасный API закрепления');
+});
+
+test('аварийный старт пропускает сессию и оставляет журнал ошибки', () => {
+  const main = readMain();
+  assert.ok(main.includes("'startup.lock'"), 'нужен marker нештатного завершения');
+  assert.ok(main.includes('prepareStartupRecovery()'), 'маркер должен проверяться перед bootstrap');
+  assert.ok(main.includes('!safeStart && settings.get'), 'аварийный старт не должен восстанавливать старые вкладки');
+  assert.ok(main.includes("'logs', 'main.log'"), 'ошибки main-процесса должны записываться в лог');
 });
 
 test('крестик вкладки реагирует на mousedown, а не только на click', () => {
@@ -1152,19 +1189,22 @@ test('активной считается только прикреплённа�
   assert.ok(/!t\.view\.webContents\.isDestroyed\(\)/.test(src));
 });
 
-test('версия 1.3.3 синхронизирована', () => {
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.3.3');
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.3.3');
-  assert.strictEqual(require('../src/shared/version').VERSION, '1.3.3');
+test('версия 1.4.0 синхронизирована', () => {
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.4.0');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.4.0');
+  assert.strictEqual(require('../src/shared/version').VERSION, '1.4.0');
 });
 
 test('TabManager получает SettingsStore, а не снимок настроек', () => {
   const main = readMain();
+  const tabs = fs.readFileSync(path.join(__dirname, '..', 'src/main/tabs.js'), 'utf8');
   const bootstrap = main.slice(main.indexOf('tabs = new TabManager'), main.indexOf('vault = createPasswordVault'));
   assert.ok(/\n\s*settings,\s*\r?\n/.test(bootstrap),
     'смена поисковика должна быть доступна TabManager без перезапуска');
   assert.ok(!/settings:\s*settings\.settings,/.test(bootstrap),
     'снимок настроек ломает создание вкладок и навигацию');
+  assert.ok(tabs.includes('return source;'),
+    'TabManager должен быть совместим со старым форматом настроек при обновлении');
 });
 
 test('чувствительные разрешения требуют выбора пользователя и могут быть отозваны', () => {

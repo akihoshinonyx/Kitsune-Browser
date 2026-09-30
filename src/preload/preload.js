@@ -52,6 +52,7 @@ function exposeBrowserApi() {
       zoomReset: (id) => invoke('tab:zoom-reset', id),
       activate: (id) => invoke('tab:activate', id),
       duplicate: (id) => invoke('tab:duplicate', id),
+      togglePinned: (id) => invoke('tab:toggle-pinned', id),
       reorder: (from, to) => invoke('tab:reorder', { from, to }),
       navigate: (input, id) => invoke('tab:navigate', { id, input }),
       back: (id) => invoke('tab:back', id),
