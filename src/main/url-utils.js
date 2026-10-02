@@ -11,10 +11,24 @@ const SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
 const HOST_LIKE_RE = /^([a-z0-9-]+\.)+[a-z]{2,}(:\d+)?(\/.*)?$/i;
 const LOCALHOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/.*)?$/i;
 const IP_RE = /^\d{1,3}(\.\d{1,3}){3}(:\d+)?(\/.*)?$/;
+const EXTERNAL_PROTOCOLS = new Set([
+  'mailto:', 'tel:', 'sms:', 'tg:', 'telegram:', 'discord:', 'zoommtg:',
+  'zoomus:', 'skype:', 'steam:', 'slack:', 'whatsapp:', 'viber:', 'ms-settings:'
+]);
 
 /** Это внутренняя страница браузера? */
 function isInternalUrl(url) {
   return typeof url === 'string' && url.startsWith('kitsune://');
+}
+
+/** Протокол должен быть передан зарегистрированному приложению ОС. */
+function isExternalAppUrl(url) {
+  if (typeof url !== 'string' || /[\u0000-\u001f\u007f]/.test(url)) return false;
+  try {
+    return EXTERNAL_PROTOCOLS.has(new URL(url).protocol.toLowerCase());
+  } catch {
+    return false;
+  }
 }
 
 /** Похоже ли, что строка — адрес, а не поисковый запрос */
@@ -75,6 +89,7 @@ function sameSite(a, b) {
 
 module.exports = {
   isInternalUrl,
+  isExternalAppUrl,
   looksLikeUrl,
   normalizeUrl,
   toNavigationUrl,

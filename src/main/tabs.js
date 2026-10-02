@@ -11,7 +11,7 @@
 const { WebContentsView, session } = require('electron');
 const { EventEmitter } = require('events');
 const path = require('path');
-const { toNavigationUrl, isInternalUrl, prettyUrl } = require('./url-utils');
+const { toNavigationUrl, isInternalUrl, isExternalAppUrl, prettyUrl } = require('./url-utils');
 const { INTERNAL_PAGES, DEFAULT_SETTINGS } = require('../shared/constants');
 
 const CHROME_HEIGHT = 88; // высота UI-полосы браузера (CSS-пиксели)
@@ -235,12 +235,29 @@ class TabManager extends EventEmitter {
       this.emitState();
     });
 
+    const openExternal = (url) => {
+      if (!isExternalAppUrl(url)) return false;
+      try {
+        require('electron').shell.openExternal(url);
+      } catch (err) {
+        this.ctx.send('ui:toast', { text: `Не удалось открыть приложение: ${err.message}` });
+      }
+      return true;
+    };
+    wc.on('will-navigate', (event, url) => {
+      if (openExternal(url)) event.preventDefault();
+    });
+    wc.on('will-redirect', (event, url) => {
+      if (openExternal(url)) event.preventDefault();
+    });
+
     wc.on('render-process-gone', () => {
       tab.error = { code: 0, description: 'Страница аварийно завершилась', url: tab.url };
       this.emitState();
     });
 
     wc.setWindowOpenHandler(({ url, disposition }) => {
+      if (openExternal(url)) return { action: 'deny' };
       // Chromium сообщает foreground-tab/background-tab для обычного открытия
       // ссылки через Ctrl-клик, СКМ и target="_blank". Это не рекламный popup:
       // блокировка всплывающих окон не должна ломать такие пользовательские

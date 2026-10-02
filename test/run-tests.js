@@ -96,6 +96,7 @@ const {
 
 const {
   isInternalUrl,
+  isExternalAppUrl,
   looksLikeUrl,
   normalizeUrl,
   toNavigationUrl,
@@ -389,6 +390,14 @@ test('isInternalUrl распознаёт внутренние страницы',
   assert.strictEqual(isInternalUrl('kitsune://settings'), true);
   assert.strictEqual(isInternalUrl('https://kitsune.com/'), false);
   assert.strictEqual(isInternalUrl(null), false);
+});
+
+test('внешние протоколы передаются ОС, а неизвестные схемы не запускаются', () => {
+  assert.strictEqual(isExternalAppUrl('tg://resolve?domain=telegram'), true);
+  assert.strictEqual(isExternalAppUrl('discord://-/invite/test'), true);
+  assert.strictEqual(isExternalAppUrl('mailto:test@example.com'), true);
+  assert.strictEqual(isExternalAppUrl('javascript:alert(1)'), false);
+  assert.strictEqual(isExternalAppUrl('https://example.com'), false);
 });
 
 test('looksLikeUrl отличает адрес от поискового запроса', () => {
@@ -1243,10 +1252,10 @@ test('активной считается только прикреплённа�
   assert.ok(/!t\.view\.webContents\.isDestroyed\(\)/.test(src));
 });
 
-test('версия 1.5.1 синхронизирована', () => {
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.5.1');
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.5.1');
-  assert.strictEqual(require('../src/shared/version').VERSION, '1.5.1');
+test('версия 1.5.2 синхронизирована', () => {
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.5.2');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.5.2');
+  assert.strictEqual(require('../src/shared/version').VERSION, '1.5.2');
 });
 
 test('TabManager получает SettingsStore, а не снимок настроек', () => {
@@ -1289,6 +1298,14 @@ test('popup-ссылки остаются под управлением вкла
   assert.ok(/if \(!this\.settings\.blockPopups\)/.test(tabs));
   assert.ok(/this\.create\(\{ url, background: disposition === 'background-tab' \}\)/.test(tabs));
   assert.ok(!/return \{ action: 'allow' \}/.test(tabs));
+});
+
+test('системные ссылки не зависают внутри Chromium, а служебные страницы не заменяют сайт', () => {
+  const tabs = readTabs();
+  const main = readMain();
+  assert.ok(/will-navigate/.test(tabs) && /will-redirect/.test(tabs));
+  assert.ok(/isExternalAppUrl/.test(tabs) && /shell\.openExternal/.test(tabs));
+  assert.ok(/tabs\.create\(\{ url \}\)/.test(main), 'внутренняя страница должна открываться новой вкладкой');
 });
 
 test('интеграция браузера по умолчанию зарегистрирована безопасно', () => {

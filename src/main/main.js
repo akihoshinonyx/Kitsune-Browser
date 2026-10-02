@@ -24,7 +24,7 @@ const { createUpdater, channelForArch, RELEASES_PAGE } = require('./updater');
 const { createDownloads } = require('./downloads');
 const { createPasswordVault } = require('./passwords');
 const { TabManager, CHROME_HEIGHT } = require('./tabs');
-const { toNavigationUrl, isInternalUrl } = require('./url-utils');
+const { toNavigationUrl, isInternalUrl, isExternalAppUrl } = require('./url-utils');
 const { hostnameOf } = require('./adblock');
 const { searchUrlFor } = require('./url-utils');
 const { bookmarksToHtml, parseBookmarksHtml, historyToJson, parseHistoryJson, MAX_IMPORT_BYTES } = require('./data-transfer');
@@ -759,8 +759,7 @@ function buildAppMenu() {
 /** Открывает внутреннюю страницу в активной вкладке (или в новой) */
 function openInternal(url) {
   if (!tabs) return;
-  if (tabs.activeId !== null) tabs.navigate(tabs.activeId, url);
-  else tabs.create({ url });
+  tabs.create({ url });
 }
 
 /** Плоский список подписей пунктов меню (для тестов и диагностики) */
@@ -1408,9 +1407,14 @@ function defaultBrowserState() {
 }
 
 function openIncomingUrls(args) {
-  const urls = (args || []).filter((value) => /^https?:\/\//i.test(String(value)));
+  const urls = (args || []).map((value) => String(value)).filter((value) =>
+    /^https?:\/\//i.test(value) || isExternalAppUrl(value)
+  );
   if (!urls.length || !tabs) return false;
-  for (const url of urls) tabs.navigate(tabs.activeId, String(url));
+  for (const url of urls) {
+    if (isExternalAppUrl(url)) shell.openExternal(url);
+    else tabs.create({ url });
+  }
   return true;
 }
 
@@ -1684,7 +1688,10 @@ function registerIpcExtras() {
   });
 
   // ── Прочее ──
-  handle('shell:open-external', (_e, url) => shell.openExternal(url));
+  handle('shell:open-external', (_e, url) => {
+    if (!isExternalAppUrl(url) && !/^https?:\/\//i.test(String(url || ''))) return false;
+    return shell.openExternal(String(url));
+  });
   handle('default-browser:state', () => defaultBrowserState());
   handle('default-browser:open-settings', () => {
     if (process.platform !== 'win32') return false;
@@ -1868,7 +1875,7 @@ if (!gotLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
       openIncomingUrls(commandLine);
-      if (!commandLine.some((value) => /^https?:\/\//i.test(String(value)))) tabs.create();
+      if (!commandLine.some((value) => /^https?:\/\//i.test(String(value)) || isExternalAppUrl(String(value)))) tabs.create();
     }
   });
 
