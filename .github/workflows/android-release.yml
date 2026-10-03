@@ -45,7 +45,7 @@ jobs:
           KITSUNE_KEYSTORE: ${{ runner.temp }}/kitsune.jks
           KITSUNE_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           KITSUNE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon assembleRelease
+        run: bash ./gradlew --no-daemon assembleRelease --stacktrace
 
       - name: Переименовать APK
         run: cp android/app/build/outputs/apk/release/app-release.apk Kitsune-Browser-Android-1.6.1.apk
