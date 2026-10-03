@@ -43,8 +43,8 @@ jobs:
         working-directory: android
         env:
           KITSUNE_KEYSTORE: ${{ runner.temp }}/kitsune.jks
-          KITSUNE_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-          KITSUNE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KITSUNE_STORE_PASSWORD: kitsune-release
+          KITSUNE_KEY_PASSWORD: kitsune-release
         run: bash ./gradlew --no-daemon assembleRelease --stacktrace
 
       - name: Переименовать APK
