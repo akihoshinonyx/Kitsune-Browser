@@ -1309,7 +1309,8 @@ function showPageContextMenu(tabId, params = {}) {
 }
 
 function registerIpc() {
-  const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) => fn(event, ...args));
+  const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) =>
+    isTrustedSender(event) ? fn(event, ...args) : null);
 
   // ── Вкладки и навигация ──
   handle('tab:create', (_e, { url, background } = {}) => tabs.create({ url, background }).id);
@@ -1412,7 +1413,8 @@ function openIncomingUrls(args) {
   );
   if (!urls.length || !tabs) return false;
   for (const url of urls) {
-    if (isExternalAppUrl(url)) shell.openExternal(url);
+    if (isExternalAppUrl(url)) Promise.resolve(shell.openExternal(url)).catch((err) =>
+      send('ui:toast', { text: `Не удалось открыть приложение: ${err.message}` }));
     else tabs.create({ url });
   }
   return true;
@@ -1468,7 +1470,9 @@ async function getSuggestions(query) {
 
 /** Настройки, блокировщик, история, закладки, поиск на странице */
 function registerIpcExtras() {
-  const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) => fn(event, ...args));
+  const pageChannels = new Set(['adblock:pick', 'pip:video-state']);
+  const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) =>
+    (isTrustedSender(event) || pageChannels.has(channel)) ? fn(event, ...args) : null);
 
   // ── Настройки ──
   handle('settings:get', () => settings.settings);

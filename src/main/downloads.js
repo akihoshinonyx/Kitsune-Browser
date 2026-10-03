@@ -9,6 +9,7 @@ const { isTrustedSender } = require('./ipc-guards');
 function createDownloads({ send, directory = () => app.getPath('downloads'), dataFile = () => path.join(app.getPath('userData'), 'downloads.json') }) {
   let records = [];
   const live = new Map();
+  const reservedPaths = new Set();
   let sequence = 0;
   try {
     records = JSON.parse(fs.readFileSync(dataFile(), 'utf8'));
@@ -32,7 +33,7 @@ function createDownloads({ send, directory = () => app.getPath('downloads'), dat
     const ext = path.extname(safe);
     const base = safe.slice(0, safe.length - ext.length);
     let candidate = path.join(folder, safe);
-    for (let n = 1; fs.existsSync(candidate); n++) candidate = path.join(folder, `${base} (${n})${ext}`);
+    for (let n = 1; fs.existsSync(candidate) || reservedPaths.has(candidate); n++) candidate = path.join(folder, `${base} (${n})${ext}`);
     return candidate;
   }
   function attach(ses) {
@@ -42,6 +43,7 @@ function createDownloads({ send, directory = () => app.getPath('downloads'), dat
         fs.mkdirSync(directory(), { recursive: true });
         target = uniquePath(directory(), item.getFilename());
         item.setSavePath(target);
+        reservedPaths.add(target);
       } catch (err) {
         item.cancel();
         send('ui:toast', { text: `Не удалось начать загрузку: ${err.message}` });
@@ -62,6 +64,7 @@ function createDownloads({ send, directory = () => app.getPath('downloads'), dat
       });
       item.once('done', (_e, state) => {
         live.delete(record.id);
+        reservedPaths.delete(target);
         record.received = item.getReceivedBytes();
         record.status = state === 'completed' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'interrupted';
         save(); notify();

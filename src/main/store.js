@@ -314,12 +314,12 @@ class PasswordStore extends Store {
     return { id: item.id, password: this._decrypt(item.password) };
   }
 
-  /** Совпадения по хосту: точный хост, затем его поддомены */
+  /** Пароли не передаются поддоменам и при понижении HTTPS до HTTP. */
   forUrl(url) {
     const host = hostnameOf(url);
     if (!host) return [];
     return this.data.items
-      .filter((item) => item.host === host || endsWithHost(host, item.host))
+      .filter((item) => item.host === host && !(String(item.url).startsWith('https:') && !String(url).startsWith('https:')))
       .sort((a, b) => (b.used || 0) - (a.used || 0));
   }
 

@@ -917,20 +917,65 @@ const fakeEvent = (tabUrl, frameUrl) => ({
   senderFrame: frameUrl === undefined ? undefined : { url: frameUrl }
 });
 
-test('senderHosts собирает хосты вкладки и фрейма', () => {
-  assert.deepStrictEqual(senderHosts(fakeEvent('https://a.test/x', 'https://b.test/y')), ['a.test', 'b.test']);
+test('senderHosts использует хост отправляющего фрейма, а не родителя', () => {
+  assert.deepStrictEqual(senderHosts(fakeEvent('https://a.test/x', 'https://b.test/y')), ['b.test']);
   assert.deepStrictEqual(senderHosts(fakeEvent('', '')), []);
 });
 
 test('isTrustedSender пропускает только внутренние страницы', () => {
-  assert.strictEqual(isTrustedSender(fakeEvent('file:///C:/app/index.html')), true);
+  const internal = require('url').pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href;
+  assert.strictEqual(isTrustedSender(fakeEvent(internal)), true);
   assert.strictEqual(isTrustedSender(fakeEvent('https://evil.test/')), false);
-  assert.strictEqual(isTrustedSender(fakeEvent('https://evil.test/', 'file:///tmp/x.html')), true);
+  assert.strictEqual(isTrustedSender(fakeEvent('https://evil.test/', 'file:///tmp/x.html')), false);
+  assert.strictEqual(isTrustedSender(fakeEvent('file:///C:/Downloads/evil.html')), false);
+  assert.strictEqual(isTrustedSender(fakeEvent(internal, 'https://evil.test/')), false);
+  assert.strictEqual(isTrustedSender(fakeEvent(internal, internal)), true);
+});
+
+test('пароли не выдаются поддомену и через HTTP вместо HTTPS', () => {
+  const store = new PasswordStore();
+  store.clear();
+  store.save({ url: 'https://example.com/login', username: 'u', password: 'secret' });
+  assert.strictEqual(store.bestFor('https://evil.example.com/'), null);
+  assert.strictEqual(store.bestFor('http://example.com/'), null);
+  assert.strictEqual(store.bestFor('https://example.com/').password, 'secret');
+});
+
+test('отключение автозаполнения не отдаёт секрет сайту', () => {
+  const { createPasswordVault } = require('../src/main/passwords');
+  let queried = false;
+  const vault = createPasswordVault({
+    store: { bestFor: () => { queried = true; return { password: 'secret' }; } },
+    settings: { get: () => false }
+  });
+  assert.deepStrictEqual(vault.credentialFor('https://example.com/'), { found: false });
+  assert.strictEqual(queried, false);
+});
+
+test('параллельные загрузки одного имени получают разные пути', () => {
+  const { EventEmitter } = require('events');
+  const { createDownloads } = require('../src/main/downloads');
+  const downloads = createDownloads({ send: () => {}, directory: () => TMP_USER_DATA });
+  const ses = new EventEmitter();
+  downloads.attach(ses);
+  const makeItem = () => Object.assign(new EventEmitter(), {
+    getFilename: () => 'parallel.zip', getURL: () => 'https://example.com/parallel.zip',
+    getTotalBytes: () => 100, getReceivedBytes: () => 0,
+    setSavePath(value) { this.target = value; }
+  });
+  const first = makeItem();
+  const second = makeItem();
+  ses.emit('will-download', {}, first);
+  ses.emit('will-download', {}, second);
+  assert.notStrictEqual(first.target, second.target);
+  assert.strictEqual(path.basename(second.target), 'parallel (1).zip');
+  first.emit('done', {}, 'cancelled');
+  second.emit('done', {}, 'cancelled');
 });
 
 test('sameHost сравнивает сайты, а не строки', () => {
   assert.strictEqual(sameHost(['example.com'], 'https://example.com/login'), true);
-  assert.strictEqual(sameHost(['www.example.com'], 'https://example.com/'), true);
+  assert.strictEqual(sameHost(['www.example.com'], 'https://example.com/'), false);
   assert.strictEqual(sameHost(['example.com'], 'https://evil-example.com/'), false);
   assert.strictEqual(sameHost([], 'https://example.com/'), false);
 });
@@ -1252,10 +1297,10 @@ test('активной считается только прикреплённа�
   assert.ok(/!t\.view\.webContents\.isDestroyed\(\)/.test(src));
 });
 
-test('версия 1.5.2 синхронизирована', () => {
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version, '1.5.2');
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, '1.5.2');
-  assert.strictEqual(require('../src/shared/version').VERSION, '1.5.2');
+test('версия синхронизирована', () => {
+  const version = require('../package.json').version;
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8')).version, version);
+  assert.strictEqual(require('../src/shared/version').VERSION, version);
 });
 
 test('TabManager получает SettingsStore, а не снимок настроек', () => {

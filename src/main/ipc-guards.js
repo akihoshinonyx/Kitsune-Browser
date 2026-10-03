@@ -11,21 +11,28 @@
  */
 
 const { hostnameOf } = require('./adblock');
+const path = require('path');
+const { fileURLToPath } = require('url');
+const { INTERNAL_PAGES } = require('../shared/constants');
+const rendererDir = path.join(__dirname, '..', 'renderer');
+const trustedFiles = new Set(['index.html', ...Object.values(INTERNAL_PAGES).map((file) => path.join('pages', file))]
+  .map((file) => path.resolve(rendererDir, file)));
+
+function isTrustedUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'file:' && !parsed.hostname && trustedFiles.has(path.resolve(fileURLToPath(parsed)));
+  } catch { return false; }
+}
 
 /** Хосты отправителя запроса: адрес вкладки и адрес фрейма */
 function senderHosts(event) {
   const hosts = [];
   try {
-    const url = event.sender.getURL();
+    const url = event.senderFrame ? event.senderFrame.url : event.sender.getURL();
     if (url) hosts.push(hostnameOf(url));
   } catch {
     /* webContents уже уничтожен */
-  }
-  try {
-    const frameUrl = event.senderFrame && event.senderFrame.url;
-    if (frameUrl) hosts.push(hostnameOf(frameUrl));
-  } catch {
-    /* фрейм недоступен */
   }
   return hosts.filter(Boolean);
 }
@@ -43,7 +50,7 @@ function isTrustedSender(event) {
   } catch {
     /* игнорируем */
   }
-  return sources.some((url) => url.startsWith('file://'));
+  return sources.length > 0 && sources.every(isTrustedUrl);
 }
 
 /** Одинаковый ли сайт у запрошенного адреса и у отправителя */
@@ -51,8 +58,8 @@ function sameHost(hosts, url) {
   const target = hostnameOf(url);
   if (!target) return false;
   return hosts.some(
-    (host) => host === target || host.endsWith('.' + target) || target.endsWith('.' + host)
+    (host) => host === target
   );
 }
 
-module.exports = { senderHosts, isTrustedSender, sameHost };
+module.exports = { senderHosts, isTrustedSender, sameHost, isTrustedUrl };

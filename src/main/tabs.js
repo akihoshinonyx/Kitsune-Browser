@@ -12,6 +12,7 @@ const { WebContentsView, session } = require('electron');
 const { EventEmitter } = require('events');
 const path = require('path');
 const { toNavigationUrl, isInternalUrl, isExternalAppUrl, prettyUrl } = require('./url-utils');
+const { isTrustedUrl } = require('./ipc-guards');
 const { INTERNAL_PAGES, DEFAULT_SETTINGS } = require('../shared/constants');
 
 const CHROME_HEIGHT = 88; // высота UI-полосы браузера (CSS-пиксели)
@@ -238,17 +239,27 @@ class TabManager extends EventEmitter {
     const openExternal = (url) => {
       if (!isExternalAppUrl(url)) return false;
       try {
-        require('electron').shell.openExternal(url);
+        Promise.resolve(require('electron').shell.openExternal(url)).catch((err) => {
+          this.ctx.send('ui:toast', { text: `Не удалось открыть приложение: ${err.message}` });
+        });
       } catch (err) {
         this.ctx.send('ui:toast', { text: `Не удалось открыть приложение: ${err.message}` });
       }
       return true;
     };
+    const blockUntrustedFile = (event, url) => {
+      if (String(url).toLowerCase().startsWith('file:') && !isTrustedUrl(url)) {
+        event.preventDefault();
+        this.ctx.send('ui:toast', { text: 'Переход к локальному файлу заблокирован' });
+        return true;
+      }
+      return false;
+    };
     wc.on('will-navigate', (event, url) => {
-      if (openExternal(url)) event.preventDefault();
+      if (!blockUntrustedFile(event, url) && openExternal(url)) event.preventDefault();
     });
     wc.on('will-redirect', (event, url) => {
-      if (openExternal(url)) event.preventDefault();
+      if (!blockUntrustedFile(event, url) && openExternal(url)) event.preventDefault();
     });
 
     wc.on('render-process-gone', () => {
@@ -257,6 +268,7 @@ class TabManager extends EventEmitter {
     });
 
     wc.setWindowOpenHandler(({ url, disposition }) => {
+      if (/^file:/i.test(url)) return { action: 'deny' };
       if (openExternal(url)) return { action: 'deny' };
       // Chromium сообщает foreground-tab/background-tab для обычного открытия
       // ссылки через Ctrl-клик, СКМ и target="_blank". Это не рекламный popup:
@@ -352,6 +364,16 @@ class TabManager extends EventEmitter {
 
     if (isInternalUrl(url)) {
       this._loadInternal(tab, url);
+    } else if (/^file:/i.test(url)) {
+      this.ctx.send('ui:toast', { text: 'Открытие локального файла заблокировано' });
+      return '';
+    } else if (isExternalAppUrl(url)) {
+      try {
+        Promise.resolve(require('electron').shell.openExternal(url)).catch((err) =>
+          this.ctx.send('ui:toast', { text: `Не удалось открыть приложение: ${err.message}` }));
+      } catch (err) {
+        this.ctx.send('ui:toast', { text: `Не удалось открыть приложение: ${err.message}` });
+      }
     } else {
       tab.internalUrl = '';
       tab.url = url; // показываем целевой адрес сразу, не дожидаясь ответа сети

@@ -68,6 +68,7 @@ function createPasswordVault({ store, settings, send, tabs, dialog, getWindow })
 
     /** Сохранённая пара для адреса (используется автозаполнением) */
     credentialFor(url) {
+      if (settings.get('autofillPasswords', true) === false) return { found: false };
       const best = store.bestFor(url);
       if (!best) return { found: false };
       return {
@@ -119,6 +120,7 @@ function createPasswordVault({ store, settings, send, tabs, dialog, getWindow })
       const wc = tabs && tabs.activeWebContents;
       const item = store.find(id);
       if (!wc || wc.isDestroyed() || !item) return false;
+      if (!sameHost([hostnameOf(wc.getURL())], item.url)) return false;
       const secret = store.reveal(id);
       store.touch(id);
       wc.send('password:fill-active', {
