@@ -1,0 +1,59 @@
+name: Android Release
+
+on:
+  push:
+    tags:
+      - 'v1.6.1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: Собрать Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Android SDK
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Временный ключ подписи релиза
+        run: |
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/kitsune.jks" -storepass kitsune-release \
+            -alias kitsune -keypass kitsune-release -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Kitsune Browser, OU=Kitsune, O=Kitsune, L=Internet, ST=Internet, C=US"
+
+      - name: Сборка APK
+        working-directory: android
+        env:
+          KITSUNE_KEYSTORE: ${{ runner.temp }}/kitsune.jks
+          KITSUNE_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KITSUNE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Переименовать APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk Kitsune-Browser-Android-1.6.1.apk
+
+      - name: Опубликовать Android release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.6.1
+          name: Kitsune Browser 1.6.1 for Android
+          body: |
+            Android-релиз Kitsune Browser 1.6.1.
+
+            Windows-версия не изменялась. APK содержит отдельный Android WebView-клиент
+            с вкладками, DuckDuckGo и базовой блокировкой рекламы.
+
+            В этой первой публикации используется CI-ключ подписи. Для следующих
+            обновлений потребуется настроить постоянный Android keystore.
+          files: Kitsune-Browser-Android-1.6.1.apk

@@ -1,0 +1,31 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.kitsune.android'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.kitsune.browser.android'
+        minSdk 23
+        targetSdk 35
+        versionCode 10601
+        versionName '1.6.1'
+    }
+
+    signingConfigs {
+        release {
+            if (System.getenv('KITSUNE_KEYSTORE')) {
+                storeFile file(System.getenv('KITSUNE_KEYSTORE'))
+                storePassword System.getenv('KITSUNE_STORE_PASSWORD')
+                keyAlias 'kitsune'
+                keyPassword System.getenv('KITSUNE_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (System.getenv('KITSUNE_KEYSTORE')) signingConfig signingConfigs.release
+        }
+    }
+}

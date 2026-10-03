@@ -29,6 +29,7 @@ permissions:
 
 jobs:
   build-and-publish:
+    if: github.ref_name != 'v1.6.1'
     name: Собрать и опубликовать
     runs-on: windows-latest
     steps:
