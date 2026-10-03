@@ -11,6 +11,25 @@ const { app, safeStorage } = require('electron');
 const { DEFAULT_SETTINGS } = require('../shared/constants');
 const { hostnameOf, endsWithHost } = require('./adblock');
 
+/** Замена файла только после полной записи и сброса содержимого на диск. */
+function writeJsonAtomic(filePath, data) {
+  const text = JSON.stringify(data, null, 2);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const temporary = `${filePath}.tmp`;
+  let fd;
+  try {
+    fd = fs.openSync(temporary, 'w', 0o600);
+    fs.writeFileSync(fd, text, 'utf8');
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = undefined;
+    fs.renameSync(temporary, filePath);
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+    fs.rmSync(temporary, { force: true });
+  }
+}
+
 class Store {
   constructor(fileName, defaults = {}) {
     this.filePath = path.join(app.getPath('userData'), fileName);
@@ -59,10 +78,11 @@ class Store {
 
   save() {
     try {
-      fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-      fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2), 'utf8');
+      writeJsonAtomic(this.filePath, this.data);
+      return true;
     } catch (err) {
       console.error('[Kitsune] Не удалось сохранить настройки:', err.message);
+      return false;
     }
   }
 
@@ -231,9 +251,9 @@ class BookmarkStore extends Store {
  * Менеджер паролей Kitsune.
  *
  * Пароли шифруются средствами операционной системы (DPAPI в Windows,
- * Keychain в macOS, libsecret в Linux) через `safeStorage`. Если шифрование
- * недоступно, запись сохраняется в base64 с пометкой `raw:` — и UI честно
- * предупреждает об этом, а не делает вид, что всё защищено.
+ * Keychain в macOS, libsecret в Linux) через `safeStorage`. Новые пароли
+ * не сохраняются, если системное шифрование
+ * недоступно: base64 не является защитой.
  *
  * Открытый пароль никогда не покидает main-процесс без явного запроса:
  * list() отдаёт только маску, пароль выдаёт reveal()/bestFor().
@@ -241,6 +261,7 @@ class BookmarkStore extends Store {
 class PasswordStore extends Store {
   constructor() {
     super('passwords.json', { items: [], secure: false });
+    this._migrateLegacyPasswords();
   }
 
   /** Доступно ли шифрование средствами ОС */
@@ -259,14 +280,36 @@ class PasswordStore extends Store {
   _encrypt(plain) {
     const value = String(plain == null ? '' : plain);
     if (!value) return '';
-    if (this.secure) {
-      try {
-        return 'enc:' + safeStorage.encryptString(value).toString('base64');
-      } catch {
-        /* падаем в base64 ниже */
-      }
+    if (!this.secure) return null;
+    try {
+      return 'enc:' + safeStorage.encryptString(value).toString('base64');
+    } catch {
+      return null;
     }
-    return 'raw:' + Buffer.from(value, 'utf8').toString('base64');
+  }
+
+  /** Перешифровывает старый legacy raw: формат, если ОС уже готова. */
+  _migrateLegacyPasswords() {
+    if (!this.secure) return;
+    const previous = JSON.parse(JSON.stringify(this.data));
+    let changed = false;
+    for (const item of this.data.items) {
+      if (!String(item.password || '').startsWith('raw:')) continue;
+      let plain;
+      try {
+        plain = Buffer.from(item.password.slice(4), 'base64').toString('utf8');
+      } catch {
+        plain = '';
+      }
+      const encrypted = this._encrypt(plain);
+      if (!encrypted) continue;
+      item.password = encrypted;
+      changed = true;
+    }
+    if (changed) {
+      this.data.secure = true;
+      if (!super.save()) this.data = previous;
+    }
   }
 
   _decrypt(stored) {
@@ -278,7 +321,9 @@ class PasswordStore extends Store {
         return safeStorage.decryptString(Buffer.from(value.slice(4), 'base64'));
       }
       if (value.startsWith('raw:')) {
-        return Buffer.from(value.slice(4), 'base64').toString('utf8');
+        // Legacy values are never revealed. A future startup with safeStorage
+        // migrates them before this method is called.
+        return '';
       }
     } catch {
       return '';
@@ -344,19 +389,28 @@ class PasswordStore extends Store {
   }
 
   /** Сохраняет или обновляет пару. Возвращает id записи. */
-  save({ url, username = '', password = '' } = {}) {
+  save(entry) {
+    // Базовый Store вызывает save() при flush и отложенной записи.
+    if (entry === undefined) return super.save();
+    const { url, username = '', password = '' } = entry || {};
     const host = hostnameOf(url);
     const secret = String(password == null ? '' : password);
     if (!host || !secret) return null;
 
     const user = String(username || '').trim();
+    const encrypted = this._encrypt(secret);
+    if (!encrypted) return null;
+    const previous = JSON.parse(JSON.stringify(this.data));
     const existing = this.data.items.find((item) => item.host === host && item.username === user);
     if (existing) {
       existing.url = String(url);
-      existing.password = this._encrypt(secret);
+      existing.password = encrypted;
       existing.time = Date.now();
       this.data.secure = this.secure;
-      this.save();
+      if (!super.save()) {
+        this.data = previous;
+        return null;
+      }
       return existing.id;
     }
 
@@ -365,14 +419,17 @@ class PasswordStore extends Store {
       url: String(url),
       host,
       username: user,
-      password: this._encrypt(secret),
+      password: encrypted,
       time: Date.now(),
       used: 0
     };
     this.data.items.unshift(item);
     if (this.data.items.length > 1000) this.data.items.length = 1000;
     this.data.secure = this.secure;
-    this.save();
+    if (!super.save()) {
+      this.data = previous;
+      return null;
+    }
     return item.id;
   }
 
@@ -386,17 +443,26 @@ class PasswordStore extends Store {
   }
 
   remove(id) {
+    const previous = this.data.items;
     const before = this.data.items.length;
     this.data.items = this.data.items.filter((item) => item.id !== id);
     if (this.data.items.length === before) return false;
-    this.save();
+    if (!super.save()) {
+      this.data.items = previous;
+      return false;
+    }
     return true;
   }
 
   clear() {
+    const previous = this.data.items;
     this.data.items = [];
-    this.save();
+    if (!super.save()) {
+      this.data.items = previous;
+      return false;
+    }
+    return true;
   }
 }
 
-module.exports = { Store, SettingsStore, HistoryStore, BookmarkStore, PasswordStore };
+module.exports = { Store, SettingsStore, HistoryStore, BookmarkStore, PasswordStore, writeJsonAtomic };

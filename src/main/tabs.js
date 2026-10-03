@@ -28,7 +28,9 @@ class TabManager extends EventEmitter {
    *          adblock: import('./adblock').AdBlocker,
    *          history: import('./store').HistoryStore,
    *          bookmarks: import('./store').BookmarkStore,
-   *          send: (channel:string, payload:any)=>void}} ctx
+   *          send: (channel:string, payload:any)=>void,
+   *          session: Electron.Session,
+   *          private?: boolean}}
    */
   constructor(win, ctx) {
     super();
@@ -103,7 +105,7 @@ class TabManager extends EventEmitter {
 
     const view = new WebContentsView({
       webPreferences: {
-        session: session.fromPartition('persist:kitsune'),
+        session: this.ctx.session || session.fromPartition('persist:kitsune'),
         preload: PRELOAD_PATH,
         contextIsolation: true,
         nodeIntegration: false,
@@ -341,7 +343,7 @@ class TabManager extends EventEmitter {
   }
 
   _maybeRecordHistory(tab) {
-    if (!tab.url || isInternalUrl(tab.url)) return;
+    if (this.ctx.private || !this.ctx.history || !tab.url || isInternalUrl(tab.url)) return;
     this.ctx.history.add({ url: tab.url, title: tab.title, favicon: tab.favicon });
   }
 
@@ -500,7 +502,7 @@ class TabManager extends EventEmitter {
     this.ctx.adblock.clearTabStats(id);
 
     // 2) Запоминаем адрес, чтобы вернуть вкладку по Ctrl+Shift+T
-    if (remember && !tab.pinned && tab.url && !isInternalUrl(tab.url)) {
+    if (!this.ctx.private && remember && !tab.pinned && tab.url && !isInternalUrl(tab.url)) {
       this.closedStack.push({ url: tab.url, title: tab.title || tab.url });
       if (this.closedStack.length > MAX_CLOSED) this.closedStack.shift();
     }
@@ -718,7 +720,7 @@ class TabManager extends EventEmitter {
     return {
       tabs,
       activeId: active ? active.id : null,
-      closedCount: this.closedStack.length,
+      closedCount: this.ctx.private ? 0 : this.closedStack.length,
       lastClosed: this.closedStack.length ? this.closedStack[this.closedStack.length - 1].url : '',
       active: active
         ? {
@@ -788,6 +790,7 @@ class TabManager extends EventEmitter {
   }
 
   restoreSession(entries) {
+    if (this.ctx.private) return false;
     if (!Array.isArray(entries) || !entries.length) return false;
     let activeId = null;
     for (const entry of entries) {

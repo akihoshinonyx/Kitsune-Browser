@@ -61,6 +61,13 @@ async function testAsync(name, fn) {
 
 const TMP_USER_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-test-'));
 
+// Только тестовый обратимый кодек; не заменяет реальное шифрование ОС.
+const safeStorageStub = {
+  isEncryptionAvailable: () => true,
+  encryptString: (plain) => Buffer.from([...Buffer.from(plain)].map((byte) => byte ^ 0xa5)),
+  decryptString: (encrypted) => Buffer.from([...encrypted].map((byte) => byte ^ 0xa5)).toString('utf8')
+};
+
 function stubElectron() {
   const id = require.resolve('electron');
   require.cache[id] = {
@@ -74,7 +81,8 @@ function stubElectron() {
         getVersion: () => VERSION,
         isPackaged: false
       },
-      shell: { openExternal: () => {} }
+      shell: { openExternal: () => {} },
+      safeStorage: safeStorageStub
     }
   };
 }
@@ -845,7 +853,96 @@ test('статистика знает про косметические прав
   assert.deepStrictEqual(stats.lists, ['test']);
 });
 
+suite('Атомарное хранение профиля');
+
+test('атомарная запись сохраняет старый файл при ошибке замены', () => {
+  const { writeJsonAtomic } = require('../src/main/store');
+  const file = path.join(TMP_USER_DATA, 'atomic.json');
+  writeJsonAtomic(file, { value: 'old' });
+  const rename = fs.renameSync;
+  fs.renameSync = () => { throw new Error('simulated rename failure'); };
+  try {
+    assert.throws(() => writeJsonAtomic(file, { value: 'new' }), /simulated/);
+  } finally {
+    fs.renameSync = rename;
+  }
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { value: 'old' });
+  assert.strictEqual(fs.existsSync(`${file}.tmp`), false);
+  writeJsonAtomic(file, { value: 'new' });
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { value: 'new' });
+});
+
+test('ошибка сериализации не повреждает предыдущую запись', () => {
+  const { writeJsonAtomic } = require('../src/main/store');
+  const file = path.join(TMP_USER_DATA, 'serialize.json');
+  writeJsonAtomic(file, { valid: true });
+  const cyclic = {}; cyclic.self = cyclic;
+  assert.throws(() => writeJsonAtomic(file, cyclic));
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { valid: true });
+});
+
 suite('Менеджер паролей (PasswordStore)');
+
+test('недоступное шифрование и ошибка encrypt не изменяют пароли', () => {
+  const store = new PasswordStore();
+  store.clear();
+  const entry = { url: 'https://secure.test/', username: 'u', password: 'old' };
+  const id = store.save(entry);
+  const before = fs.readFileSync(store.filePath, 'utf8');
+  const available = safeStorageStub.isEncryptionAvailable;
+  const encrypt = safeStorageStub.encryptString;
+  try {
+    safeStorageStub.isEncryptionAvailable = () => false;
+    assert.strictEqual(store.save({ ...entry, password: 'new' }), null);
+    safeStorageStub.isEncryptionAvailable = () => true;
+    safeStorageStub.encryptString = () => { throw new Error('encryption failed'); };
+    assert.strictEqual(store.save({ ...entry, password: 'new' }), null);
+    assert.strictEqual(fs.readFileSync(store.filePath, 'utf8'), before);
+  } finally {
+    safeStorageStub.isEncryptionAvailable = available;
+    safeStorageStub.encryptString = encrypt;
+  }
+  assert.strictEqual(store.reveal(id).password, 'old');
+});
+
+test('legacy raw мигрирует на диске, но не раскрывается без шифрования', () => {
+  const file = path.join(TMP_USER_DATA, 'passwords.json');
+  const legacy = { items: [{ id: 'legacy', host: 'legacy.test', url: 'https://legacy.test/',
+    username: 'u', password: 'raw:' + Buffer.from('legacy-secret').toString('base64') }] };
+  fs.writeFileSync(file, JSON.stringify(legacy));
+  const available = safeStorageStub.isEncryptionAvailable;
+  try {
+    safeStorageStub.isEncryptionAvailable = () => false;
+    const locked = new PasswordStore();
+    assert.strictEqual(locked.reveal('legacy').password, '');
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file)), legacy);
+  } finally {
+    safeStorageStub.isEncryptionAvailable = available;
+  }
+  const migrated = new PasswordStore();
+  assert.ok(migrated.find('legacy').password.startsWith('enc:'));
+  assert.strictEqual(migrated.reveal('legacy').password, 'legacy-secret');
+  assert.strictEqual(fs.readFileSync(file, 'utf8').includes('raw:'), false);
+  assert.strictEqual(new PasswordStore().reveal('legacy').password, 'legacy-secret');
+  migrated.clear();
+});
+
+test('пароли сохраняются, обновляются и удаляются между открытиями хранилища', () => {
+  const store = new PasswordStore();
+  store.clear();
+  const id = store.save({ url: 'https://persist.test/', username: 'user', password: 'first' });
+  assert.strictEqual(new PasswordStore().reveal(id).password, 'first');
+  store.save({ url: 'https://persist.test/', username: 'user', password: 'second' });
+  assert.strictEqual(new PasswordStore().reveal(id).password, 'second');
+  store.touch(id);
+  store.flush();
+  assert.ok(new PasswordStore().find(id).used > 0);
+  store.remove(id);
+  assert.strictEqual(new PasswordStore().find(id), null);
+  store.save({ url: 'https://persist.test/', password: 'third' });
+  store.clear();
+  assert.strictEqual(new PasswordStore().count, 0);
+});
 
 test('save/reveal/bestFor работают и не хранят пароль открытым текстом', () => {
   const store = new PasswordStore();
@@ -1306,7 +1403,7 @@ test('версия синхронизирована', () => {
 test('TabManager получает SettingsStore, а не снимок настроек', () => {
   const main = readMain();
   const tabs = fs.readFileSync(path.join(__dirname, '..', 'src/main/tabs.js'), 'utf8');
-  const bootstrap = main.slice(main.indexOf('tabs = new TabManager'), main.indexOf('vault = createPasswordVault'));
+  const bootstrap = main.slice(main.indexOf('\n  tabs = new TabManager'), main.indexOf('vault = createPasswordVault'));
   assert.ok(/\n\s*settings,\s*\r?\n/.test(bootstrap),
     'смена поисковика должна быть доступна TabManager без перезапуска');
   assert.ok(!/settings:\s*settings\.settings,/.test(bootstrap),
@@ -1367,6 +1464,24 @@ test('история закрывается кнопкой, а загрузки 
   const html = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/index.html'), 'utf8');
   assert.ok(/sbClose\.addEventListener\('click', closeSidebar\)/.test(renderer));
   assert.ok(/id="downloads-button"/.test(html) && /downloads:changed/.test(renderer));
+});
+
+test('приватное окно использует отдельный временный контекст', () => {
+  const main = readMain();
+  const tabs = readTabs();
+  assert.ok(/createPrivateWindow/.test(main));
+  assert.ok(/kitsune-private-/.test(main) && /session\.fromPartition\(partition\)/.test(main));
+  assert.ok(/private: true/.test(main));
+  assert.ok(/if \(this\.ctx\.private \|\| !this\.ctx\.history/.test(tabs));
+  assert.ok(/if \(this\.ctx\.private\) return false/.test(tabs));
+  assert.ok(/privateWindow && !allowed.has\(channel\)/.test(main));
+  assert.ok(/function configureSession/.test(main) && /configureSession\(ses, \{ privateMode: true \}\)/.test(main));
+  assert.ok(/findTabByWebContentsId\(details\.webContentsId, ses\)/.test(main));
+  assert.ok(/appInfo\(privateMode = false\)/.test(main));
+  const smoke = fs.readFileSync(path.join(__dirname, '..', 'tools', 'smoke-test.js'), 'utf8');
+  assert.ok(/createServer/.test(smoke) && /localStorage\.setItem/.test(smoke));
+  assert.ok(/sessionStorage\.setItem/.test(smoke) && /caches\.open/.test(smoke));
+  assert.ok(/новое приватное окно не восстанавливает cookie и storage/.test(smoke));
 });
 
 suite('Автообновление из GitHub Releases');

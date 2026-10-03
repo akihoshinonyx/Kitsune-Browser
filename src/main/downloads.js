@@ -85,9 +85,9 @@ function createDownloads({ send, directory = () => app.getPath('downloads'), dat
     else shell.openPath(record.path);
     return true;
   }
-  function registerIpc(ipcMain) {
+  function registerIpc(ipcMain, isPrivateSender = () => false) {
     const handle = (name, fn) => ipcMain.handle(name, (event, ...args) =>
-      isTrustedSender(event) ? fn(...args) : null);
+      !isPrivateSender(event) && isTrustedSender(event) ? fn(...args) : null);
     handle('downloads:list', list);
     handle('downloads:cancel', cancel);
     handle('downloads:open', (id) => open(id));

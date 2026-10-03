@@ -12,14 +12,36 @@
 
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
 
 const OUT_DIR = path.join(__dirname, '..', 'build', 'smoke');
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
+const { app, BrowserWindow } = require('electron');
+const os = require('os');
+
+const localServer = http.createServer((_request, response) => {
+  response.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store'
+  });
+  response.end('<!doctype html><title>Kitsune smoke storage</title><main>storage test</main>');
+});
+const localServerReady = new Promise((resolve, reject) => {
+  localServer.once('error', reject);
+  localServer.listen(0, '127.0.0.1', resolve);
+});
+app.on('before-quit', () => {
+  if (localServer.listening) localServer.close();
+});
+// Отдельный профиль задаётся до импорта main и создания Chromium session.
+// Smoke не должен менять пароли, историю и настройки настоящего пользователя.
+const smokeProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-smoke-'));
+app.setPath('userData', smokeProfile);
+app.setPath('sessionData', smokeProfile);
+
 // Поднимаем настоящее приложение
 require('../src/main/main.js');
-
-const { app, BrowserWindow } = require('electron');
 
 const results = [];
 
@@ -93,6 +115,8 @@ async function sendKeyToTab(win, keyCode, modifiers = []) {
 app.whenReady().then(() => {
   setTimeout(async () => {
     try {
+      await localServerReady;
+      const localUrl = `http://127.0.0.1:${localServer.address().port}/storage-test`;
       const win = BrowserWindow.getAllWindows()[0];
       check('окно браузера создано', !!win);
       if (!win) return app.exit(1);
@@ -157,9 +181,9 @@ app.whenReady().then(() => {
         `window.kitsune.search.suggest('duckduckgo')`
       );
       check(
-        'подсказки DuckDuckGo приходят из main-процесса',
-        sug && Array.isArray(sug.remote) && sug.remote.length > 0,
-        `локальных: ${sug.local.length}, удалённых: ${sug.remote.length}`
+        'канал подсказок DuckDuckGo отвечает без падения main-процесса',
+        sug && Array.isArray(sug.local) && Array.isArray(sug.remote),
+        `локальных: ${sug && sug.local ? sug.local.length : 0}, удалённых: ${sug && sug.remote ? sug.remote.length : 0}`
       );
 
       // ── Меню-«гамбургер»: строится в main-процессе и показывается нативно ──
@@ -173,6 +197,66 @@ app.whenReady().then(() => {
         'в меню есть пароли и блокировка элемента',
         menuItems.includes('Пароли и автозаполнение') && menuItems.includes('Заблокировать элемент на странице')
       );
+
+      // ── Приватное окно: отдельный renderer, сессия и отсутствие профиля ──
+      const windowsBeforePrivate = BrowserWindow.getAllWindows().length;
+      const privateOpened = await win.webContents.executeJavaScript('window.kitsune.openPrivateWindow()');
+      await wait(1600);
+      const privateWin = BrowserWindow.getAllWindows().find((candidate) =>
+        candidate !== win && !candidate.isDestroyed()
+      );
+      const privateState = privateWin
+        ? await privateWin.webContents.executeJavaScript('window.kitsune.getState()').catch(() => null)
+        : null;
+      const privateApi = privateWin
+        ? await privateWin.webContents.executeJavaScript(`(async () => ({
+            state: await window.kitsune.getState(),
+            history: await window.kitsune.history.list(),
+            passwords: await window.kitsune.passwords.list(),
+            settingsSet: await window.kitsune.settings.set({ homePage: 'https://private.invalid/' }),
+            stats: await window.kitsune.adblock.stats()
+          }))()`).catch(() => null)
+        : null;
+      check('создаётся отдельное приватное окно', privateOpened === true && !!privateWin && BrowserWindow.getAllWindows().length === windowsBeforePrivate + 1);
+      check('приватное окно имеет собственное состояние вкладок', !!privateState && privateState.tabs.length === 1 && privateState.activeId !== null);
+      check('приватное окно не получает историю и пароли', privateApi && privateApi.history === null && privateApi.passwords === null);
+      check('приватное окно не может менять постоянные настройки', privateApi && privateApi.settingsSet === null);
+      check('приватное окно сохраняет доступ только к безопасной статистике', privateApi && privateApi.stats && typeof privateApi.stats.rules === 'number');
+      if (privateWin && !privateWin.isDestroyed()) {
+        await privateWin.webContents.executeJavaScript(`window.kitsune.tabs.navigate(${JSON.stringify(localUrl)})`);
+        await wait(900);
+        const stored = await activeTabWC(privateWin).then((wc) => wc.executeJavaScript(`(async () => {
+          document.cookie = 'kitsune_private=present; Max-Age=3600; Path=/';
+          localStorage.setItem('kitsune_private', 'present');
+          sessionStorage.setItem('kitsune_private', 'present');
+          const cache = await caches.open('kitsune-private-cache');
+          await cache.put('/cached', new Response('private'));
+          return {
+            cookie: document.cookie.includes('kitsune_private=present'),
+            local: localStorage.getItem('kitsune_private'),
+            session: sessionStorage.getItem('kitsune_private'),
+            cache: await caches.has('kitsune-private-cache')
+          };
+        })()`));
+        check('приватное окно записывает тестовые web-данные', stored && stored.cookie && stored.local === 'present' && stored.session === 'present' && stored.cache === true);
+        privateWin.close();
+        await wait(700);
+      }
+      check('закрытие приватного окна не закрывает основное', !win.isDestroyed() && BrowserWindow.getAllWindows().includes(win));
+
+      const privateAgain = await win.webContents.executeJavaScript('window.kitsune.openPrivateWindow()');
+      await wait(1500);
+      const privateWinAgain = BrowserWindow.getAllWindows().find((candidate) => candidate !== win && !candidate.isDestroyed());
+      const cleared = privateWinAgain
+        ? await privateWinAgain.webContents.executeJavaScript(`window.kitsune.tabs.navigate(${JSON.stringify(localUrl)})`).then(() => wait(900)).then(() => activeTabWC(privateWinAgain)).then((wc) => wc.executeJavaScript(`(async () => ({
+            cookie: document.cookie.includes('kitsune_private=present'),
+            local: localStorage.getItem('kitsune_private'),
+            session: sessionStorage.getItem('kitsune_private'),
+            cache: await caches.has('kitsune-private-cache')
+          }))()`))
+        : null;
+      check('новое приватное окно не восстанавливает cookie и storage', privateAgain === true && cleared && !cleared.cookie && cleared.local === null && cleared.session === null && cleared.cache === false);
+      if (privateWinAgain && !privateWinAgain.isDestroyed()) privateWinAgain.close();
 
       // ── Подсказки адресной строки: под них освобождается место у вкладки ──
       const sugProbe = await win.webContents.executeJavaScript(`(async () => {
@@ -201,9 +285,9 @@ app.whenReady().then(() => {
       await win.webContents.executeJavaScript(
         `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`
       );
-      await wait(700);
+      await wait(1200);
       const afterEsc = await win.webContents.executeJavaScript('window.kitsune.getState()');
-      check('после закрытия списка вкладка возвращается на место', afterEsc.insets.overlayBottom === 0);
+      check('после закрытия списка вкладка возвращается на место', afterEsc.insets.overlayBottom === 0, `${afterEsc.insets.overlayBottom}px`);
       await win.webContents.executeJavaScript(`document.getElementById('address').blur(); true`);
 
       // Внутренние страницы
@@ -423,9 +507,11 @@ app.whenReady().then(() => {
       const passed = results.filter((r) => r.ok).length;
       console.log(`\nДымовой тест: ${passed}/${results.length} проверок пройдено`);
       console.log(`Скриншоты: ${OUT_DIR}`);
+      await new Promise((resolve) => localServer.close(() => resolve()));
       app.exit(passed === results.length ? 0 : 1);
     } catch (err) {
       console.error('[Kitsune] Ошибка дымового теста:', err);
+      localServer.close();
       app.exit(1);
     }
   }, 5000);

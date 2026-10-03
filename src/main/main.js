@@ -33,6 +33,7 @@ const SESSION_PARTITION = 'persist:kitsune';
 
 let mainWindow = null;
 let tabs = null;
+const windowContexts = new Map();
 let adblock = null;
 let settings = null;
 let history = null;
@@ -197,12 +198,32 @@ function send(channel, payload) {
   }
 }
 
+function contextForEvent(event) {
+  for (const context of windowContexts.values()) {
+    if (context.window && !context.window.isDestroyed() && context.window.webContents.id === event.sender.id) {
+      return context;
+    }
+    if ([...context.tabs.tabs.values()].some((tab) => tab.view.webContents.id === event.sender.id)) return context;
+  }
+  return { window: mainWindow, tabs, private: false, send };
+}
+
+function privateContextFor(event) {
+  const context = contextForEvent(event);
+  return context.private ? context : null;
+}
+
 /* ────────────────────────── Настройка сессии ────────────────────────── */
 
 function setupSession() {
   const ses = session.fromPartition(SESSION_PARTITION);
   downloads = createDownloads({ send });
+  configureSession(ses);
   downloads.attach(ses);
+}
+
+/** Настраивает сетевые фильтры и разрешения для любой оконной сессии. */
+function configureSession(ses, { privateMode = false } = {}) {
 
   // ── Блокировка рекламы и трекеров ──
   ses.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
@@ -210,7 +231,7 @@ function setupSession() {
       if (!adblock.enabled) return callback({ cancel: false });
       if (isInternalUrl(details.url)) return callback({ cancel: false });
 
-      const tabForRequest = findTabByWebContentsId(details.webContentsId);
+      const tabForRequest = findTabByWebContentsId(details.webContentsId, ses);
       const tabUrl = tabForRequest ? tabForRequest.url : '';
       const tabId = tabForRequest ? tabForRequest.id : -1;
 
@@ -273,11 +294,11 @@ function setupSession() {
     const origin = permissionOrigin(details && details.requestingUrl);
     const names = permissionNames(permission, details);
     if (!origin || !names.length) return callback(false);
-    if (hasSitePermission(origin, names, wc.id)) return callback(true);
+    if (!privateMode && hasSitePermission(origin, names, wc.id)) return callback(true);
 
     const decision = await askSitePermission(wc, origin, names);
     if (decision === 'once' || decision === 'always') {
-      rememberSitePermission(origin, names, wc.id, decision === 'always');
+      if (!privateMode) rememberSitePermission(origin, names, wc.id, decision === 'always');
       return callback(true);
     }
     return callback(false);
@@ -286,7 +307,7 @@ function setupSession() {
   ses.setPermissionCheckHandler((wc, permission, requestingOrigin, details) => {
     if (!SENSITIVE_PERMISSIONS.has(permission)) return ['fullscreen', 'clipboard-sanitized-write'].includes(permission);
     const names = permissionNames(permission, details);
-    return !!requestingOrigin && hasSitePermission(requestingOrigin, names, wc.id);
+    return !privateMode && !!requestingOrigin && hasSitePermission(requestingOrigin, names, wc.id);
   });
 
   ses.setUserAgent(buildUserAgent());
@@ -324,19 +345,25 @@ function buildUserAgent() {
  */
 const tabByWcId = new Map();
 
-function findTabByWebContentsId(webContentsId) {
-  if (!tabs || webContentsId === undefined || webContentsId === null) return null;
-  const cached = tabByWcId.get(webContentsId);
-  if (cached && tabs.tabs.get(cached.id) === cached) return cached;
+function findTabByWebContentsId(webContentsId, sourceSession) {
+  if (webContentsId === undefined || webContentsId === null) return null;
+  const cached = tabByWcId.get(`${sourceSession && sourceSession.getStoragePath ? sourceSession.getStoragePath() : ''}:${webContentsId}`);
+  if (cached && cached.manager.tabs.get(cached.id) === cached) return cached;
 
-  for (const tab of tabs.tabs.values()) {
-    const wc = tab.view.webContents;
-    if (wc && wc.id === webContentsId) {
-      tabByWcId.set(webContentsId, tab);
-      return tab;
+  const managers = [{ manager: tabs }, ...[...windowContexts.values()].map((context) => ({ manager: context.tabs }))];
+  for (const { manager } of managers) {
+    if (!manager) continue;
+    for (const tab of manager.tabs.values()) {
+      const wc = tab.view.webContents;
+      if (wc && wc.id === webContentsId && (!sourceSession || wc.session === sourceSession)) {
+        const key = `${sourceSession && sourceSession.getStoragePath ? sourceSession.getStoragePath() : ''}:${webContentsId}`;
+        tab.manager = manager;
+        tabByWcId.set(key, tab);
+        return tab;
+      }
     }
   }
-  tabByWcId.delete(webContentsId);
+  tabByWcId.delete(`${sourceSession && sourceSession.getStoragePath ? sourceSession.getStoragePath() : ''}:${webContentsId}`);
   return null;
 }
 
@@ -408,14 +435,15 @@ function isYouTubeAdUrl(url, tabUrl) {
 let blockedNotifyTimer = null;
 
 function notifyBlockedCount(tab) {
-  if (!tab || tab.id !== tabs.activeId) return;
+  const manager = tab && tab.manager;
+  if (!tab || !manager || tab.id !== manager.activeId) return;
   if (blockedNotifyTimer) return;
   blockedNotifyTimer = setTimeout(() => {
     blockedNotifyTimer = null;
-    if (!tabs) return;
-    const active = tabs.active;
+    if (!manager) return;
+    const active = manager.active;
     if (!active) return;
-    send('adblock:count', {
+    manager.ctx.send('adblock:count', {
       tabId: active.id,
       count: active.blocked,
       total: adblock.blockedTotal
@@ -489,6 +517,7 @@ function handleShortcut(input, tabId) {
   // ── Вкладки ──
   if (ctrl && shift && key === 't') return run(() => reopenClosedTab());
   if (ctrl && key === 't') return run(() => tabs.create({ url: settings.get('homePage', 'kitsune://home') }));
+  if (ctrl && shift && key === 'p') return run(() => createPrivateWindow());
   if (ctrl && key === 'w') return run(() => tabs.close(id));
   if (ctrl && key === 'tab') return run(() => cycleTab(shift ? -1 : 1));
   if (ctrl && !shift && /^[1-8]$/.test(key)) {
@@ -583,6 +612,63 @@ function createWindow() {
   });
 
   Menu.setApplicationMenu(buildWindowMenu());
+}
+
+/** Создаёт отдельное окно без постоянного профиля и без доступа к профилю. */
+function createPrivateWindow() {
+  const win = new BrowserWindow({
+    width: 1280, height: 820, minWidth: 720, minHeight: 480,
+    title: `${APP_NAME} — Приватное окно`, frame: process.platform !== 'win32',
+    backgroundColor: '#14161a', autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
+      contextIsolation: true, nodeIntegration: false, sandbox: false
+    }
+  });
+  const partition = `kitsune-private-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const ses = session.fromPartition(partition);
+  configureSession(ses, { privateMode: true });
+  ses.on('will-download', (_event, item) => item.cancel());
+  const context = { window: win, private: true, tabs: null, send: (channel, payload) => {
+    if (!win.isDestroyed()) win.webContents.send(channel, payload);
+  } };
+  context.send('app:info', appInfo(true));
+  context.tabs = new TabManager(win, {
+    settings, adblock, bookmarks, send: context.send, session: ses, private: true,
+    onShortcut: (input, id) => handleShortcutFor(context, input, id),
+    onPageReady: applyCosmetics
+  });
+  windowContexts.set(win.webContents.id, context);
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  win.on('ready-to-show', () => win.show());
+  win.on('close', () => { context.tabs.destroyAll(); });
+  const windowId = win.webContents.id;
+  win.webContents.on('before-input-event', (event, input) => {
+    if (handleShortcutFor(context, input)) event.preventDefault();
+  });
+  win.on('closed', () => {
+    windowContexts.delete(windowId);
+    ses.clearStorageData().catch(() => {});
+    ses.clearCache().catch(() => {});
+  });
+  context.tabs.create({ url: settings.get('homePage', 'kitsune://home') });
+  return win;
+}
+
+function handleShortcutFor(context, input, tabId) {
+  if (!input || input.type !== 'keyDown') return false;
+  const t = context.tabs;
+  const key = String(input.key || '').toLowerCase();
+  const ctrl = input.control || input.meta;
+  const id = tabId === undefined ? t.activeId : tabId;
+  if (ctrl && input.shift && key === 'p') createPrivateWindow();
+  else if (ctrl && key === 't') t.create();
+  else if (ctrl && key === 'w') t.close(id);
+  else if (ctrl && key === 'r') t.reload(id, { ignoreCache: !!input.shift });
+  else if (ctrl && key === 'l') context.send('ui:focus-address');
+  else if (ctrl && key === 'f') context.send('ui:focus-find');
+  else return false;
+  return true;
 }
 
 /** Собственное меню (скрыто по умолчанию, доступно по Alt) */
@@ -696,6 +782,7 @@ function buildAppMenu() {
   const hasTabs = !!(tabs && tabs.activeId !== null);
 
   const template = [
+    { label: 'Новое приватное окно   (Ctrl+Shift+P)', click: () => createPrivateWindow() },
     {
       label: 'Новая вкладка   (Ctrl+T)',
       click: () => tabs.create({ url: settings.get('homePage', 'kitsune://home') })
@@ -754,6 +841,18 @@ function buildAppMenu() {
   ];
 
   return Menu.buildFromTemplate(template);
+}
+
+function buildPrivateAppMenu(context) {
+  return Menu.buildFromTemplate([
+    { label: 'Новое приватное окно   (Ctrl+Shift+P)', click: () => createPrivateWindow() },
+    { label: 'Новая вкладка   (Ctrl+T)', click: () => context.tabs.create({ url: settings.get('homePage', 'kitsune://home') }) },
+    { type: 'separator' },
+    { label: 'Найти на странице   (Ctrl+F)', click: () => context.send('ui:focus-find') },
+    { label: `Блокировка рекламы: ${adblock.enabled ? 'включена' : 'выключена'}`, enabled: false },
+    { type: 'separator' },
+    { label: 'Закрыть окно', click: () => context.window.close() }
+  ]);
 }
 
 /** Открывает внутреннюю страницу в активной вкладке (или в новой) */
@@ -1312,53 +1411,60 @@ function registerIpc() {
   const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) =>
     isTrustedSender(event) ? fn(event, ...args) : null);
 
+  handle('window:private', () => {
+    createPrivateWindow();
+    return true;
+  });
+
   // ── Вкладки и навигация ──
-  handle('tab:create', (_e, { url, background } = {}) => tabs.create({ url, background }).id);
-  handle('tab:close', (_e, id) => tabs.close(id === undefined ? tabs.activeId : id));
-  handle('tab:close-others', (_e, id) => {
-    tabs.closeOthers(id === undefined ? tabs.activeId : id);
+  handle('tab:create', (event, { url, background } = {}) => { const c = contextForEvent(event); return c.tabs.create({ url, background }).id; });
+  handle('tab:close', (event, id) => { const t = contextForEvent(event).tabs; return t.close(id === undefined ? t.activeId : id); });
+  handle('tab:close-others', (event, id) => { const t = contextForEvent(event).tabs;
+    t.closeOthers(id === undefined ? t.activeId : id);
     return true;
   });
-  handle('tab:close-right', (_e, id) => {
-    tabs.closeToRight(id === undefined ? tabs.activeId : id);
+  handle('tab:close-right', (event, id) => { const t = contextForEvent(event).tabs;
+    t.closeToRight(id === undefined ? t.activeId : id);
     return true;
   });
-  handle('tab:reopen', () => {
-    const tab = tabs.reopenClosed();
+  handle('tab:reopen', (event) => {
+    const tab = contextForEvent(event).tabs.reopenClosed();
     return tab ? tab.id : null;
   });
-  handle('tab:context-menu', (event, id) => showTabContextMenu(event, id));
-  handle('tab:devtools', (_e, id) => {
-    toggleTabDevTools(id === undefined ? tabs.activeId : id);
+  handle('tab:context-menu', (event, id) => privateContextFor(event) ? false : showTabContextMenu(event, id));
+  handle('tab:devtools', (event, id) => {
+    const t = contextForEvent(event).tabs;
+    const tab = t.tabs.get(id === undefined ? t.activeId : id);
+    if (tab) tab.view.webContents.toggleDevTools();
     return true;
   });
-  handle('tab:zoom', (_e, { id, delta } = {}) => tabs.setZoom(id || tabs.activeId, delta || 0));
-  handle('tab:zoom-reset', (_e, id) => tabs.resetZoom(id || tabs.activeId));
-  handle('tab:activate', (_e, id) => tabs.activate(id === undefined ? tabs.activeId : id));
-  handle('tab:reorder', (_e, { from, to }) => tabs.reorder(from, to));
-  handle('tab:duplicate', (_e, id) => tabs.duplicate(id === undefined ? tabs.activeId : id));
-  handle('tab:toggle-pinned', (_e, id) => tabs.togglePinned(id === undefined ? tabs.activeId : id));
-  handle('tab:navigate', (_e, { id, input }) => tabs.navigate(id || tabs.activeId, input));
-  handle('tab:back', (_e, id) => tabs.goBack(id || tabs.activeId));
-  handle('tab:forward', (_e, id) => tabs.goForward(id || tabs.activeId));
-  handle('tab:reload', (_e, { id, ignoreCache } = {}) => tabs.reload(id || tabs.activeId, { ignoreCache }));
-  handle('tab:stop', (_e, id) => tabs.stop(id || tabs.activeId));
-  handle('tab:home', (_e, id) => tabs.goHome(id || tabs.activeId));
-  handle('tab:cycle', (_e, direction) => cycleTab(direction));
+  handle('tab:zoom', (event, { id, delta } = {}) => { const t = contextForEvent(event).tabs; return t.setZoom(id || t.activeId, delta || 0); });
+  handle('tab:zoom-reset', (event, id) => { const t = contextForEvent(event).tabs; return t.resetZoom(id || t.activeId); });
+  handle('tab:activate', (event, id) => { const t = contextForEvent(event).tabs; return t.activate(id === undefined ? t.activeId : id); });
+  handle('tab:reorder', (event, { from, to }) => contextForEvent(event).tabs.reorder(from, to));
+  handle('tab:duplicate', (event, id) => { const t = contextForEvent(event).tabs; return t.duplicate(id === undefined ? t.activeId : id); });
+  handle('tab:toggle-pinned', (event, id) => { const t = contextForEvent(event).tabs; return t.togglePinned(id === undefined ? t.activeId : id); });
+  handle('tab:navigate', (event, { id, input }) => { const t = contextForEvent(event).tabs; return t.navigate(id || t.activeId, input); });
+  handle('tab:back', (event, id) => { const t = contextForEvent(event).tabs; return t.goBack(id || t.activeId); });
+  handle('tab:forward', (event, id) => { const t = contextForEvent(event).tabs; return t.goForward(id || t.activeId); });
+  handle('tab:reload', (event, { id, ignoreCache } = {}) => { const t = contextForEvent(event).tabs; return t.reload(id || t.activeId, { ignoreCache }); });
+  handle('tab:stop', (event, id) => { const t = contextForEvent(event).tabs; return t.stop(id || t.activeId); });
+  handle('tab:home', (event, id) => { const t = contextForEvent(event).tabs; return t.goHome(id || t.activeId); });
+  handle('tab:cycle', (event, direction) => { const t = contextForEvent(event).tabs; if (t.order.length < 2) return; const i = t.order.indexOf(t.activeId); t.activate(t.order[(i + direction + t.order.length) % t.order.length]); });
 
   // ── Состояние ──
-  handle('state:get', () => tabs.getState());
-  handle('app:info', () => appInfo());
+  handle('state:get', (event) => contextForEvent(event).tabs.getState());
+  handle('app:info', (event) => appInfo(!!privateContextFor(event)));
 
   // ── Адресная строка и подсказки ──
   handle('search:url', (_e, { query }) => {
     const s = settings.settings;
     return toNavigationUrl(query, s.searchEngine, s.safeSearch);
   });
-  handle('search:suggest', (_e, { query }) => getSuggestions(query));
+  handle('search:suggest', (event, { query }) => privateContextFor(event) ? { local: [], remote: [] } : getSuggestions(query));
 }
 
-function appInfo() {
+function appInfo(privateMode = false) {
   return {
     name: APP_NAME,
     shortName: APP_SHORT_NAME,
@@ -1370,7 +1476,7 @@ function appInfo() {
     platform: process.platform,
     searchEngines: Object.values(SEARCH_ENGINES),
     settings: settings.settings,
-    sitePermissions: listSitePermissions(),
+    sitePermissions: privateMode ? [] : listSitePermissions(),
     adblock: {
       rules: adblock.rulesCount,
       enabled: adblock.enabled,
@@ -1386,7 +1492,7 @@ function appInfo() {
     portable: !!process.env.PORTABLE_EXECUTABLE_FILE,
     updateChannel: channelForArch(),
     update: updater ? updater.getState() : null,
-    passwords: {
+    passwords: privateMode ? { count: 0, secure: false } : {
       count: passwords ? passwords.count : 0,
       secure: passwords ? passwords.secure : false
     },
@@ -1471,8 +1577,13 @@ async function getSuggestions(query) {
 /** Настройки, блокировщик, история, закладки, поиск на странице */
 function registerIpcExtras() {
   const pageChannels = new Set(['adblock:pick', 'pip:video-state']);
-  const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) =>
-    (isTrustedSender(event) || pageChannels.has(channel)) ? fn(event, ...args) : null);
+  const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) => {
+    const privateWindow = !!privateContextFor(event);
+    const allowed = new Set(['settings:get', 'adblock:stats', 'ui:set-insets', 'find:start', 'find:stop',
+      'window:minimize', 'window:maximize', 'window:close']);
+    if (privateWindow && !allowed.has(channel)) return null;
+    return (isTrustedSender(event) || pageChannels.has(channel)) ? fn(event, ...args) : null;
+  });
 
   // ── Настройки ──
   handle('settings:get', () => settings.settings);
@@ -1574,22 +1685,26 @@ function registerIpcExtras() {
   // ── Меню-«гамбургер» и отступы UI ──
   // Меню показывается нативно (см. buildAppMenu), а отступы нужны, чтобы
   // выпадающие списки UI и боковая панель не оказались под вкладкой.
-  handle('ui:app-menu', (_e, { x = 0, y = 0 } = {}) => {
-    if (!mainWindow) return false;
-    const menu = buildAppMenu();
+  handle('ui:app-menu', (event, { x = 0, y = 0 } = {}) => {
+    const context = contextForEvent(event);
+    if (!context.window || context.window.isDestroyed()) return false;
+    const menu = context.private ? buildPrivateAppMenu(context) : buildAppMenu();
     menu.popup({
-      window: mainWindow,
+      window: context.window,
       x: Math.max(0, Math.round(Number(x) || 0)),
       y: Math.max(0, Math.round(Number(y) || 0))
     });
     return true;
   });
-  handle('ui:set-insets', (_e, patch) => {
-    if (!tabs) return false;
-    return tabs.setInsets(patch || {});
+  handle('ui:set-insets', (event, patch) => {
+    const context = contextForEvent(event);
+    return context.tabs ? context.tabs.setInsets(patch || {}) : false;
   });
   // Состав меню без его показа — используется тестами и диагностикой
-  handle('ui:app-menu-items', () => collectMenuLabels(buildAppMenu()));
+  handle('ui:app-menu-items', (event) => {
+    const context = contextForEvent(event);
+    return collectMenuLabels(context.private ? buildPrivateAppMenu(context) : buildAppMenu());
+  });
 
   // ── История ──
   handle('history:list', (event, { query, limit } = {}) => {
@@ -1674,8 +1789,8 @@ function registerIpcExtras() {
   });
 
   // ── Поиск на странице ──
-  handle('find:start', (_e, { text, forward = true, findNext = false }) => {
-    const wc = tabs.activeWebContents;
+  handle('find:start', (event, { text, forward = true, findNext = false }) => {
+    const wc = contextForEvent(event).tabs.activeWebContents;
     if (!wc) return { matches: 0 };
     findInPageQuery = String(text || '');
     if (!findInPageQuery) {
@@ -1684,8 +1799,8 @@ function registerIpcExtras() {
     }
     return { matches: wc.findInPage(findInPageQuery, { forward, findNext }) };
   });
-  handle('find:stop', () => {
-    const wc = tabs.activeWebContents;
+  handle('find:stop', (event) => {
+    const wc = contextForEvent(event).tabs.activeWebContents;
     if (wc) wc.stopFindInPage('clearSelection');
     findInPageQuery = '';
     return true;
@@ -1702,14 +1817,15 @@ function registerIpcExtras() {
     shell.openExternal('ms-settings:defaultapps');
     return true;
   });
-  handle('window:minimize', () => mainWindow && mainWindow.minimize());
-  handle('window:maximize', () => {
-    if (!mainWindow) return false;
-    if (mainWindow.isMaximized()) mainWindow.unmaximize();
-    else mainWindow.maximize();
-    return mainWindow.isMaximized();
+  handle('window:minimize', (event) => contextForEvent(event).window && contextForEvent(event).window.minimize());
+  handle('window:maximize', (event) => {
+    const win = contextForEvent(event).window;
+    if (!win) return false;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+    return win.isMaximized();
   });
-  handle('window:close', () => mainWindow && mainWindow.close());
+  handle('window:close', (event) => contextForEvent(event).window && contextForEvent(event).window.close());
   handle('clipboard:write', (_e, text) => clipboard.writeText(String(text)));
   handle('dialog:confirm', async (_e, { title, message } = {}) => {
     const res = await dialog.showMessageBox(mainWindow, {
@@ -1821,6 +1937,7 @@ function bootstrap() {
     history,
     bookmarks,
     send,
+    session: session.fromPartition(SESSION_PARTITION),
     onShortcut: handleShortcut,
     onContextMenu: showPageContextMenu,
     onPageReady: applyCosmetics
@@ -1832,13 +1949,14 @@ function bootstrap() {
     send,
     tabs,
     dialog,
-    getWindow: () => mainWindow
+    getWindow: () => mainWindow,
+    isPrivateSender: (event) => !!privateContextFor(event)
   });
 
   registerIpc();
   registerIpcExtras();
   vault.registerIpc(ipcMain);
-  downloads.registerIpc(ipcMain);
+  downloads.registerIpc(ipcMain, (event) => !!privateContextFor(event));
 
   // Автообновление из GitHub Releases. Проверка запускается с задержкой,
   // чтобы не отнимать сеть и диск у старта браузера.

@@ -37,6 +37,7 @@ function exposeBrowserApi() {
   const api = {
     /* ── Информация о приложении ── */
     getAppInfo: () => invoke('app:info'),
+    openPrivateWindow: () => invoke('window:private'),
     getState: () => invoke('state:get'),
 
     /* ── Вкладки ── */

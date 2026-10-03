@@ -18,16 +18,16 @@ Kitsune Browser — настольный браузер на Electron с нас�
 
 | Система | Файл из релиза |
 |---|---|
-| Windows 10/11, 64-битная | `Kitsune-Browser-Setup-1.5.3-x64.exe` |
-| Windows 10, 32-битная | `Kitsune-Browser-Setup-1.5.3-ia32.exe` |
-| Без установки (флешка) | `Kitsune-Browser-Portable-1.5.3-<арх>.exe` |
+| Windows 10/11, 64-битная | `Kitsune-Browser-Setup-1.6.0-x64.exe` |
+| Windows 10, 32-битная | `Kitsune-Browser-Setup-1.6.0-ia32.exe` |
+| Без установки (флешка) | `Kitsune-Browser-Portable-1.6.0-<арх>.exe` |
 
 ```powershell
 # обычная установка: мастер, ярлык на рабочем столе, меню «Пуск», запись в «Установка и удаление программ»
-.\Kitsune-Browser-Setup-1.5.3-x64.exe
+.\Kitsune-Browser-Setup-1.6.0-x64.exe
 
 # тихая установка для скриптов
-.\Kitsune-Browser-Setup-1.5.3-x64.exe /S
+.\Kitsune-Browser-Setup-1.6.0-x64.exe /S
 
 # установка скриптом из собранной папки (без установщика)
 powershell -ExecutionPolicy Bypass -File .\tools\install.ps1 -Run
@@ -129,7 +129,7 @@ npm start        # запускает браузер
 часть сайтов (Google, Netflix, банки, видеосервисы) считает такой браузер встроенным движком и
 отдаёт упрощённую или сломанную страницу. Kitsune собирает UA сам (`buildUserAgent()` в
 `src/main/main.js`): сообщает настоящую версию Chromium из `process.versions.chrome` и ставит
-метку `Kitsune/1.5.3` в конец строки — так же, как это делают Edge и Opera.
+метку `Kitsune/1.6.0` в конец строки — так же, как это делают Edge и Opera.
 
 ---
 

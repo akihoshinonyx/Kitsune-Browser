@@ -640,7 +640,7 @@ async function initPasswords() {
     countEl.textContent = String(items.length);
     secureEl.textContent = data.secure
       ? 'Пароли шифруются средствами операционной системы — файл без вашего профиля не читается.'
-      : 'Системное шифрование недоступно: пароли сохранены в кодированном, но не защищённом виде.';
+      : 'Системное шифрование недоступно. Сохранение новых паролей отключено; старые незащищённые записи будут перешифрованы при доступности шифрования.';
     render();
   }
 
@@ -754,15 +754,20 @@ async function initPasswords() {
       return;
     }
     const res = await api.passwords.save({ url, username, password });
-    if (!res) {
-      statusEl.textContent = 'Не удалось сохранить — проверьте адрес сайта';
+    if (res && res.error === 'encryption-unavailable') {
+      statusEl.textContent = 'Сохранение отключено: системное шифрование недоступно';
+      statusEl.style.color = '#ef5a5a';
+      return;
+    }
+    if (!res || !res.id) {
+      statusEl.textContent = 'Не удалось сохранить — проверьте адрес, системное шифрование и доступ к профилю';
       statusEl.style.color = '#ef5a5a';
       return;
     }
     document.getElementById('pw-add-url').value = '';
     document.getElementById('pw-add-user').value = '';
     document.getElementById('pw-add-pass').value = '';
-    statusEl.textContent = 'Сохранено';
+    statusEl.textContent = 'Сохранено в защищённом виде';
     statusEl.style.color = '#46c07a';
     setTimeout(() => {
       statusEl.style.color = '';

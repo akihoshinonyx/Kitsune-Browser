@@ -29,13 +29,17 @@ const { senderHosts, isTrustedSender, sameHost } = require('./ipc-guards');
    подключён — capture() падал с ReferenceError, и диалог «Сохранить пароль?»
    не показывался никогда. */
 
-function createPasswordVault({ store, settings, send, tabs, dialog, getWindow }) {
+function createPasswordVault({ store, settings, send, tabs, dialog, getWindow, isPrivateSender = () => false }) {
   // Сайты, для которых пользователь отказался сохранять пароль в этой сессии
   const dismissed = new Set();
   let asking = false;
 
   /** Диалог «Сохранить пароль?» — как в Chrome, только нативный */
   async function askToSave({ host, username, password, url }) {
+    if (!store.secure) {
+      send('ui:toast', { text: 'Пароль не сохранён: системное шифрование недоступно' });
+      return false;
+    }
     const win = typeof getWindow === 'function' ? getWindow() : null;
     const res = await dialog.showMessageBox(win, {
       type: 'question',
@@ -47,9 +51,7 @@ function createPasswordVault({ store, settings, send, tabs, dialog, getWindow })
       message: `Сохранить пароль для ${host}?`,
       detail:
         `Логин: ${username || '(не указан)'}\n` +
-        (store.secure
-          ? 'Пароль будет зашифрован средствами операционной системы.'
-          : 'ВНИМАНИЕ: системное шифрование недоступно — пароль сохранится в кодированном, но не защищённом виде.')
+        'Пароль будет зашифрован средствами операционной системы.'
     });
     if (res.response !== 0) {
       dismissed.add(host);
@@ -60,6 +62,7 @@ function createPasswordVault({ store, settings, send, tabs, dialog, getWindow })
       send('ui:toast', { text: `Пароль для ${host} сохранён` });
       return true;
     }
+    send('ui:toast', { text: 'Не удалось сохранить пароль: проверьте шифрование и доступ к профилю' });
     return false;
   }
 
@@ -70,7 +73,7 @@ function createPasswordVault({ store, settings, send, tabs, dialog, getWindow })
     credentialFor(url) {
       if (settings.get('autofillPasswords', true) === false) return { found: false };
       const best = store.bestFor(url);
-      if (!best) return { found: false };
+      if (!best || !best.password) return { found: false };
       return {
         found: true,
         id: best.id,
@@ -122,6 +125,7 @@ function createPasswordVault({ store, settings, send, tabs, dialog, getWindow })
       if (!wc || wc.isDestroyed() || !item) return false;
       if (!sameHost([hostnameOf(wc.getURL())], item.url)) return false;
       const secret = store.reveal(id);
+      if (!secret || !secret.password) return false;
       store.touch(id);
       wc.send('password:fill-active', {
         username: item.username,
@@ -135,7 +139,8 @@ function createPasswordVault({ store, settings, send, tabs, dialog, getWindow })
      * @param {import('electron').IpcMain} ipcMain
      */
     registerIpc(ipcMain) {
-      const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) => fn(event, ...args));
+      const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) =>
+        isPrivateSender(event) ? null : fn(event, ...args));
 
       handle('password:list', (event) => {
         if (!isTrustedSender(event)) return { items: [], secure: store.secure };
@@ -149,20 +154,20 @@ function createPasswordVault({ store, settings, send, tabs, dialog, getWindow })
 
       handle('password:save', (event, entry) => {
         if (!isTrustedSender(event)) return null;
+        if (!store.secure) return { error: 'encryption-unavailable' };
         const id = store.save(entry || {});
-        return id ? { id, items: store.list() } : null;
+        return id ? { id, items: store.list() } : { error: 'save-failed' };
       });
 
       handle('password:remove', (event, id) => {
         if (!isTrustedSender(event)) return false;
-        store.remove(id);
+        if (!store.remove(id)) return false;
         return store.list();
       });
 
       handle('password:clear', (event) => {
         if (!isTrustedSender(event)) return false;
-        store.clear();
-        return true;
+        return store.clear();
       });
 
       handle('password:fill-active', (event, id) => {
