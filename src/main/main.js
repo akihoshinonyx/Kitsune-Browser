@@ -11,7 +11,7 @@
  *  4) обрабатывает загрузки файлов, горячие клавиши, меню окна.
  */
 
-const { app, BrowserWindow, ipcMain, session, shell, dialog, Menu, clipboard, net } = require('electron');
+const { app, BrowserWindow, ipcMain, session, shell, dialog, Menu, clipboard, net, desktopCapturer, webContents } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -114,7 +114,7 @@ const temporarySitePermissions = new Map();
 const pendingPermissionRequests = new Map();
 const permissionPromptRequests = new Map();
 let nextPermissionPromptId = 1;
-const SENSITIVE_PERMISSIONS = new Set(['geolocation', 'media', 'microphone', 'camera']);
+const SENSITIVE_PERMISSIONS = new Set(['geolocation', 'media', 'microphone', 'camera', 'display-capture']);
 
 function permissionOrigin(url) {
   try {
@@ -138,6 +138,7 @@ function permissionNames(permission, details) {
   if (permission === 'media') return mediaPermissionNames(details);
   if (permission === 'microphone') return ['microphone'];
   if (permission === 'camera') return ['camera'];
+  if (permission === 'display-capture') return ['display-capture'];
   return [permission];
 }
 
@@ -202,7 +203,10 @@ function showPermissionPrompt(owner, site, names) {
       maxWidth: 470,
       maxHeight: 350,
       parent: owner && !owner.isDestroyed() ? owner : undefined,
-      modal: !!(owner && !owner.isDestroyed()),
+      // Не блокируем окно браузера: пользователь должен иметь возможность
+      // продолжать работу, пока плашка находится поверх него.
+      modal: false,
+      alwaysOnTop: true,
       show: false,
       frame: false,
       resizable: false,
@@ -212,25 +216,29 @@ function showPermissionPrompt(owner, site, names) {
         preload: path.join(__dirname, '..', 'preload', 'permission-preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: true
+        sandbox: false
       }
     });
-    permissionPromptRequests.set(id, { prompt, resolve });
+    const timeout = setTimeout(() => finish('deny'), 120000);
     const finish = (decision) => {
       const pending = permissionPromptRequests.get(id);
       if (!pending) return;
+      clearTimeout(timeout);
       permissionPromptRequests.delete(id);
       if (!prompt.isDestroyed()) prompt.close();
       resolve(decision);
     };
+    permissionPromptRequests.set(id, { prompt, resolve: finish });
     prompt.on('closed', () => finish('deny'));
+    prompt.webContents.on('did-fail-load', () => finish('deny'));
+    prompt.webContents.on('render-process-gone', () => finish('deny'));
     prompt.webContents.once('did-finish-load', () => {
       if (prompt.isDestroyed()) return;
       prompt.webContents.send('permission:show', { id, site, permissions: names });
       prompt.show();
       prompt.focus();
     });
-    prompt.loadFile(path.join(__dirname, '..', 'renderer', 'permission.html'));
+    prompt.loadFile(path.join(__dirname, '..', 'renderer', 'permission.html')).catch(() => finish('deny'));
   });
 }
 
@@ -352,6 +360,44 @@ function configureSession(ses, { privateMode = false } = {}) {
     const names = permissionNames(permission, details);
     return !privateMode && !!requestingOrigin && hasSitePermission(requestingOrigin, names, wc.id);
   });
+
+  // Electron 44 не показывает системный picker автоматически. Передаём
+  // выбранный источник Chromium через desktopCapturer после явного согласия.
+  // Проверка нужна для совместимости с более старыми Electron-сборками.
+  if (typeof ses.setDisplayMediaRequestHandler === 'function') {
+    ses.setDisplayMediaRequestHandler(async (request, callback) => {
+      try {
+        const sourceContents = request && request.frame && webContents.fromFrame(request.frame);
+        const origin = permissionOrigin(request && request.securityOrigin);
+        if (!sourceContents || sourceContents.isDestroyed() || !origin) return callback({});
+        const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 } });
+        if (!sources.length) return callback({});
+        const decision = await askSitePermission(sourceContents, origin, ['display-capture']);
+        if (decision === 'once' || decision === 'always') {
+          if (sourceContents.isDestroyed() || !request.frame || request.frame.detached) return callback({});
+          const selection = await dialog.showMessageBox({
+            type: 'question',
+            title: 'Демонстрация экрана',
+            message: `Выберите экран или окно для ${new URL(origin).hostname}`,
+            detail: 'Сайт увидит содержимое только выбранного источника.',
+            buttons: ['Отмена', ...sources.map((source) => source.name)],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true
+          });
+          const selected = sources[selection.response - 1];
+          if (!selected || sourceContents.isDestroyed() || request.frame.detached) return callback({});
+          const streams = { video: selected };
+          if (request.audioRequested) streams.audio = 'loopbackWithMute';
+          callback(streams);
+        }
+        else callback({});
+      } catch (err) {
+        writeMainLog('WARN', `display-capture отклонён: ${err.message}`);
+        callback({});
+      }
+    });
+  }
 
   ses.setUserAgent(buildUserAgent());
 }
@@ -1456,8 +1502,6 @@ function registerIpc() {
     if (!pending || event.sender !== pending.prompt.webContents) return;
     const decision = ['once', 'always', 'deny'].includes(payload.decision) ? payload.decision : 'deny';
     pending.resolve(decision);
-    permissionPromptRequests.delete(String(payload.id));
-    if (!pending.prompt.isDestroyed()) pending.prompt.close();
   });
   const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) =>
     isTrustedSender(event) ? fn(event, ...args) : null);

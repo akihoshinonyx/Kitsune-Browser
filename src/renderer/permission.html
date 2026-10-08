@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'unsafe-inline'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'" />
   <title>Разрешение сайта</title>
   <style>
     :root { --bg:#14161a; --card:#1d2128; --border:#303642; --text:#f1f3f7; --dim:#9aa3b2; --accent:#ff7a29; --green:#46c07a; --red:#ef5a5a; }
@@ -10,6 +10,8 @@
     html,body { margin:0; width:100%; height:100%; background:var(--bg); color:var(--text); font:14px "Segoe UI",system-ui,sans-serif; }
     body { display:flex; align-items:center; justify-content:center; }
     .card { width:100%; height:100%; padding:30px 32px 24px; background:linear-gradient(145deg,#222731,#181b20); border:1px solid #3a414d; border-radius:16px; box-shadow:0 18px 50px #0008; }
+    #close { position:absolute; top:12px; right:15px; padding:0 8px; background:transparent; color:var(--dim); font-size:25px; font-weight:400; }
+    #close:hover { color:var(--text); transform:none; }
     .icon { width:50px; height:50px; display:grid; place-items:center; border-radius:15px; background:#ff7a2922; color:var(--accent); font-size:26px; margin-bottom:16px; }
     h1 { font-size:20px; margin:0 0 8px; } .site { color:var(--accent); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:390px; }
     p { color:var(--dim); line-height:1.45; margin:0 0 20px; } .permissions { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 22px; }
@@ -20,7 +22,8 @@
 </head>
 <body>
   <main class="card">
-    <div class="icon">🎙</div>
+    <button id="close" aria-label="Закрыть">×</button>
+    <div class="icon" id="icon">🎙</div>
     <h1><span id="site">Сайт</span> запрашивает доступ</h1>
     <p>Разрешить этому сайту использовать выбранные устройства? Доступ «на этот раз» исчезнет после закрытия вкладки.</p>
     <div class="permissions" id="permissions"></div>
@@ -31,14 +34,17 @@
     </div>
   </main>
   <script>
-    const labels = { microphone: '🎙 Микрофон', camera: '📷 Камера', geolocation: '📍 Геолокация' };
+    const labels = { microphone: '🎙 Микрофон', camera: '📷 Камера', geolocation: '📍 Геолокация', 'display-capture': '🖥 Демонстрация экрана' };
     let requestId = '';
     window.kitsunePermission.onShow((data) => {
       requestId = data.id;
+      document.getElementById('icon').textContent = data.permissions.includes('display-capture') ? '🖥' : '🎙';
       document.getElementById('site').textContent = data.site;
       document.getElementById('permissions').replaceChildren(...data.permissions.map((name) => { const el = document.createElement('span'); el.className = 'permission'; el.textContent = labels[name] || name; return el; }));
     });
     document.querySelectorAll('button[data-decision]').forEach((button) => button.addEventListener('click', () => window.kitsunePermission.decide(requestId, button.dataset.decision)));
+    document.getElementById('close').addEventListener('click', () => window.kitsunePermission.decide(requestId, 'deny'));
+    window.addEventListener('keydown', (event) => { if (event.key === 'Escape') window.kitsunePermission.decide(requestId, 'deny'); });
   </script>
 </body>
 </html>

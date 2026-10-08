@@ -1423,8 +1423,23 @@ test('чувствительные разрешения требуют выбо�
   assert.ok(/geolocation/.test(main) && /media/.test(main) && /microphone/.test(main) && /permissions:revoke/.test(main));
   assert.ok(/permission:decision/.test(permissionPreload) && /permission:decision/.test(main));
   assert.ok(/permission-preload\.js/.test(main) && /permission\.html/.test(main));
+  assert.ok(/script-src 'self' 'unsafe-inline'/.test(permissionPage));
+  assert.ok(/Escape/.test(permissionPage) && /id="close"/.test(permissionPage));
   assert.ok(/permissions:\s*\{/.test(preload) && /site-permissions/.test(settings));
   assert.ok(/destroyed.*temporarySitePermissions\.delete/.test(main));
+});
+
+test('демонстрация экрана использует desktopCapturer и не блокирует родительское окно', () => {
+  const main = readMain();
+  const page = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/permission.html'), 'utf8');
+  assert.ok(/setDisplayMediaRequestHandler/.test(main));
+  assert.ok(/desktopCapturer\.getSources/.test(main));
+  assert.ok(/webContents\.fromFrame\(request.frame\)/.test(main));
+  assert.ok(/video: selected/.test(main) && /sources\[selection.response - 1\]/.test(main));
+  assert.ok(/resolve: finish/.test(main) && /clearTimeout\(timeout\)/.test(main));
+  assert.ok(/securityOrigin/.test(main) && /audioRequested/.test(main));
+  assert.ok(/modal:\s*false/.test(main) && /alwaysOnTop:\s*true/.test(main));
+  assert.ok(/display-capture/.test(page));
 });
 
 test('чувствительные разрешения сайтов не выдаются автоматически', () => {
