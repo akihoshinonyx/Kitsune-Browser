@@ -112,7 +112,9 @@ process.on('unhandledRejection', (reason) => {
 // Разрешения «только в этот раз» живут только до закрытия вкладки.
 const temporarySitePermissions = new Map();
 const pendingPermissionRequests = new Map();
-const SENSITIVE_PERMISSIONS = new Set(['geolocation', 'media']);
+const permissionPromptRequests = new Map();
+let nextPermissionPromptId = 1;
+const SENSITIVE_PERMISSIONS = new Set(['geolocation', 'media', 'microphone', 'camera']);
 
 function permissionOrigin(url) {
   try {
@@ -133,7 +135,10 @@ function mediaPermissionNames(details) {
 }
 
 function permissionNames(permission, details) {
-  return permission === 'media' ? mediaPermissionNames(details) : [permission];
+  if (permission === 'media') return mediaPermissionNames(details);
+  if (permission === 'microphone') return ['microphone'];
+  if (permission === 'camera') return ['camera'];
+  return [permission];
 }
 
 function permissionTitle(names) {
@@ -177,20 +182,56 @@ async function askSitePermission(wc, origin, names) {
   const request = (async () => {
     if (!mainWindow || mainWindow.isDestroyed() || wc.isDestroyed()) return 'deny';
     const site = new URL(origin).hostname;
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: 'question',
-      title: 'Разрешение сайта',
-      message: `${site} запрашивает доступ к ${permissionTitle(names)}.`,
-      detail: 'Разрешение «только в этот раз» действует до закрытия вкладки. Доверять сайту постоянно можно будет отменить в настройках.',
-      buttons: ['Только в этот раз', 'Всегда доверять этому сайту', 'Запретить'],
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true
-    });
-    return result.response === 0 ? 'once' : result.response === 1 ? 'always' : 'deny';
+    const owner = BrowserWindow.fromWebContents(wc) || [...windowContexts.values()]
+      .find((context) => context.tabs && [...context.tabs.tabs.values()]
+        .some((tab) => tab.view.webContents.id === wc.id))?.window || mainWindow;
+    return showPermissionPrompt(owner, site, names);
   })().finally(() => pendingPermissionRequests.delete(key));
   pendingPermissionRequests.set(key, request);
   return request;
+}
+
+function showPermissionPrompt(owner, site, names) {
+  return new Promise((resolve) => {
+    const id = String(nextPermissionPromptId++);
+    const prompt = new BrowserWindow({
+      width: 470,
+      height: 350,
+      minWidth: 470,
+      minHeight: 350,
+      maxWidth: 470,
+      maxHeight: 350,
+      parent: owner && !owner.isDestroyed() ? owner : undefined,
+      modal: !!(owner && !owner.isDestroyed()),
+      show: false,
+      frame: false,
+      resizable: false,
+      movable: true,
+      backgroundColor: '#14161a',
+      webPreferences: {
+        preload: path.join(__dirname, '..', 'preload', 'permission-preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true
+      }
+    });
+    permissionPromptRequests.set(id, { prompt, resolve });
+    const finish = (decision) => {
+      const pending = permissionPromptRequests.get(id);
+      if (!pending) return;
+      permissionPromptRequests.delete(id);
+      if (!prompt.isDestroyed()) prompt.close();
+      resolve(decision);
+    };
+    prompt.on('closed', () => finish('deny'));
+    prompt.webContents.once('did-finish-load', () => {
+      if (prompt.isDestroyed()) return;
+      prompt.webContents.send('permission:show', { id, site, permissions: names });
+      prompt.show();
+      prompt.focus();
+    });
+    prompt.loadFile(path.join(__dirname, '..', 'renderer', 'permission.html'));
+  });
 }
 
 /** Отправка события в UI-слой */
@@ -293,7 +334,7 @@ function configureSession(ses, { privateMode = false } = {}) {
     if (automatic.includes(permission)) return callback(true);
     if (!SENSITIVE_PERMISSIONS.has(permission)) return callback(false);
 
-    const origin = permissionOrigin(details && details.requestingUrl);
+    const origin = permissionOrigin((details && details.requestingUrl) || (wc && wc.getURL && wc.getURL()));
     const names = permissionNames(permission, details);
     if (!origin || !names.length) return callback(false);
     if (!privateMode && hasSitePermission(origin, names, wc.id)) return callback(true);
@@ -1410,6 +1451,14 @@ function showPageContextMenu(tabId, params = {}) {
 }
 
 function registerIpc() {
+  ipcMain.on('permission:decision', (event, payload = {}) => {
+    const pending = permissionPromptRequests.get(String(payload.id || ''));
+    if (!pending || event.sender !== pending.prompt.webContents) return;
+    const decision = ['once', 'always', 'deny'].includes(payload.decision) ? payload.decision : 'deny';
+    pending.resolve(decision);
+    permissionPromptRequests.delete(String(payload.id));
+    if (!pending.prompt.isDestroyed()) pending.prompt.close();
+  });
   const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) =>
     isTrustedSender(event) ? fn(event, ...args) : null);
 

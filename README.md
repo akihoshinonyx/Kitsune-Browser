@@ -18,9 +18,9 @@ Kitsune Browser — настольный браузер на Electron с нас�
 
 | Система | Файл из релиза |
 |---|---|
-| Windows 10/11, 64-битная | `Kitsune-Browser-Setup-1.7.0-x64.exe` |
-| Windows 10, 32-битная | `Kitsune-Browser-Setup-1.7.0-ia32.exe` |
-| Без установки (флешка) | `Kitsune-Browser-Portable-1.7.0-<арх>.exe` |
+| Windows 10/11, 64-битная | `Kitsune-Browser-Setup-1.7.1-x64.exe` |
+| Windows 10, 32-битная | `Kitsune-Browser-Setup-1.7.1-ia32.exe` |
+| Без установки (флешка) | `Kitsune-Browser-Portable-1.7.1-<арх>.exe` |
 
 ```powershell
 # обычная установка: мастер, ярлык на рабочем столе, меню «Пуск», запись в «Установка и удаление программ»
@@ -129,7 +129,7 @@ npm start        # запускает браузер
 часть сайтов (Google, Netflix, банки, видеосервисы) считает такой браузер встроенным движком и
 отдаёт упрощённую или сломанную страницу. Kitsune собирает UA сам (`buildUserAgent()` в
 `src/main/main.js`): сообщает настоящую версию Chromium из `process.versions.chrome` и ставит
-метку `Kitsune/1.7.0` в конец строки — так же, как это делают Edge и Opera.
+метку `Kitsune/1.7.1` в конец строки — так же, как это делают Edge и Opera.
 
 ---
 

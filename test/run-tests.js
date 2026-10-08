@@ -1417,8 +1417,12 @@ test('чувствительные разрешения требуют выбо�
   const main = readMain();
   const preload = fs.readFileSync(path.join(__dirname, '..', 'src/preload/preload.js'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/pages/settings.html'), 'utf8');
-  assert.ok(/Только в этот раз/.test(main) && /Всегда доверять этому сайту/.test(main));
-  assert.ok(/geolocation/.test(main) && /media/.test(main) && /permissions:revoke/.test(main));
+  const permissionPreload = fs.readFileSync(path.join(__dirname, '..', 'src/preload/permission-preload.js'), 'utf8');
+  const permissionPage = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/permission.html'), 'utf8');
+  assert.ok(/Разрешить на этот раз/.test(permissionPage) && /Разрешить всегда/.test(permissionPage));
+  assert.ok(/geolocation/.test(main) && /media/.test(main) && /microphone/.test(main) && /permissions:revoke/.test(main));
+  assert.ok(/permission:decision/.test(permissionPreload) && /permission:decision/.test(main));
+  assert.ok(/permission-preload\.js/.test(main) && /permission\.html/.test(main));
   assert.ok(/permissions:\s*\{/.test(preload) && /site-permissions/.test(settings));
   assert.ok(/destroyed.*temporarySitePermissions\.delete/.test(main));
 });
