@@ -175,6 +175,23 @@
       <div class="row"><div class="row-label">Инструменты разработчика</div><span class="kbd">F12</span></div>
     </div>
 
+    <div class="card" id="extensions-card">
+      <h2><span class="dot"></span> Расширения Firefox</h2>
+      <p class="row-hint">Установка локальных <span class="mono">.xpi</span>/<span class="mono">.zip</span> WebExtension-пакетов. Совместимость с Firefox API не гарантируется; используются только расширения, совместимые с Chromium/Electron.</p>
+      <div class="row">
+        <div><div class="row-label">Установить из файла</div><div class="row-hint">Пакет распаковывается и проверяется перед установкой.</div></div>
+        <button class="btn" id="install-extension">Выбрать XPI</button>
+      </div>
+      <div class="row">
+        <div><div class="row-label">Скачать из Firefox Add-ons</div><div class="row-hint">Вставьте прямую HTTPS-ссылку на файл <span class="mono">.xpi</span>. Страница магазина сама по себе не устанавливается.</div></div>
+        <div style="display:flex; gap:8px; min-width:420px;"><input type="url" id="extension-url" placeholder="https://…/extension.xpi" /><button class="btn" id="download-extension">Скачать</button></div>
+      </div>
+      <div class="row">
+        <div><div class="row-label">Установленные расширения</div><div class="row-hint" id="extensions-status">Загрузка списка…</div></div>
+        <div id="extensions-list" class="permission-list"></div>
+      </div>
+    </div>
+
     <div class="card">
       <h2><span class="dot"></span> Обновления</h2>
       <div class="row">

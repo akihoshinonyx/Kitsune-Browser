@@ -11,7 +11,7 @@
  *  4) обрабатывает загрузки файлов, горячие клавиши, меню окна.
  */
 
-const { app, BrowserWindow, ipcMain, session, shell, dialog, Menu, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, session, shell, dialog, Menu, clipboard, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -22,6 +22,7 @@ const { createAdBlocker, loadFilterLists, downloadFilterLists, USER_FILTER_FILE 
 const { senderHosts, sameHost, isTrustedSender } = require('./ipc-guards');
 const { createUpdater, channelForArch, RELEASES_PAGE } = require('./updater');
 const { createDownloads } = require('./downloads');
+const { createExtensionManager } = require('./extensions');
 const { createPasswordVault } = require('./passwords');
 const { TabManager, CHROME_HEIGHT } = require('./tabs');
 const { toNavigationUrl, isInternalUrl, isExternalAppUrl } = require('./url-utils');
@@ -42,6 +43,7 @@ let passwords = null;
 let vault = null;
 let updater = null;
 let downloads = null;
+let extensions = null;
 let quitting = false;
 let sessionRestored = false;
 let findInPageQuery = '';
@@ -1492,6 +1494,7 @@ function appInfo(privateMode = false) {
     portable: !!process.env.PORTABLE_EXECUTABLE_FILE,
     updateChannel: channelForArch(),
     update: updater ? updater.getState() : null,
+    extensions: privateMode || !extensions ? [] : extensions.list(),
     passwords: privateMode ? { count: 0, secure: false } : {
       count: passwords ? passwords.count : 0,
       secure: passwords ? passwords.secure : false
@@ -1618,6 +1621,12 @@ function registerIpcExtras() {
   });
 
   // ── Блокировщик ──
+  // ── Расширения Firefox WebExtension ──
+  handle('extensions:list', () => extensions ? extensions.list() : []);
+  handle('extensions:install-file', () => extensions.installFromFile(session.fromPartition(SESSION_PARTITION)));
+  handle('extensions:install-url', (_e, url) => extensions.installFromUrl(url, session.fromPartition(SESSION_PARTITION)));
+  handle('extensions:remove', (_e, id) => extensions.remove(id, session.fromPartition(SESSION_PARTITION)));
+
   handle('adblock:stats', () => adblock.getStats());
   handle('adblock:set', (_e, enabled) => {
     setAdblockEnabled(!!enabled);
@@ -1954,6 +1963,8 @@ function bootstrap() {
   });
 
   registerIpc();
+  extensions = createExtensionManager({ app, session, net, dialog, send });
+  extensions.loadInstalled(session.fromPartition(SESSION_PARTITION)).catch((err) => console.warn('[Kitsune] Расширения:', err.message));
   registerIpcExtras();
   vault.registerIpc(ipcMain);
   downloads.registerIpc(ipcMain, (event) => !!privateContextFor(event));

@@ -117,6 +117,7 @@ const constants = require('../src/shared/constants');
 const { VERSION } = require('../src/shared/version');
 const { drawIcon, encodePng, encodeIco } = require('../tools/make-icon');
 const { senderHosts, isTrustedSender, sameHost } = require('../src/main/ipc-guards');
+const { readManifest, validateTree, MAX_PACKAGE_BYTES } = require('../src/main/extensions');
 
 /* ═══════════════════════════ Тесты ═══════════════════════════ */
 
@@ -1624,6 +1625,35 @@ testAsync('IPC обновлений закрыт для обычных сайт�
   assert.strictEqual(await handlers.get('updater:state')(siteEvent), null, 'сайту состояние не отдаём');
   const state = await handlers.get('updater:state')(pageEvent);
   assert.ok(state && state.currentVersion === VERSION, 'внутренней странице состояние доступно');
+});
+
+suite('Расширения Firefox WebExtension');
+
+test('интеграция расширений подключена к IPC и настройкам', () => {
+  const preload = readProject('src/preload/preload.js');
+  const main = readProject('src/main/main.js');
+  const page = readProject('src/renderer/pages/settings.html');
+  assert.ok(/extensions:install-file/.test(preload) && /extensions:remove/.test(preload));
+  assert.ok(/createExtensionManager/.test(main) && /loadInstalled/.test(main));
+  assert.ok(/Расширения Firefox/.test(page));
+});
+
+test('проверяет manifest и размер распакованного дерева', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-extension-test-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ name: 'Test extension', version: '1.0.0', manifest_version: 2 }));
+    fs.writeFileSync(path.join(dir, 'background.js'), '/* test */');
+    assert.deepStrictEqual(readManifest(dir), { name: 'Test extension', version: '1.0.0', manifestVersion: 2 });
+    validateTree(dir);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('отклоняет отсутствующий manifest и небезопасные данные', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-extension-test-'));
+  try {
+    assert.throws(() => readManifest(dir), /manifest\.json/);
+    assert.ok(MAX_PACKAGE_BYTES <= 50 * 1024 * 1024);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 /* ───────────────────── Установщики, установка и публикация ───────────────────── */

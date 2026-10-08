@@ -339,6 +339,40 @@ async function initSettings() {
   document.getElementById('export-history').addEventListener('click', () => transfer(api.history.export, 'Экспорт истории'));
   document.getElementById('import-history').addEventListener('click', () => transfer(api.history.import, 'Импорт истории'));
 
+  /* ── Расширения ── */
+  const extensionsList = document.getElementById('extensions-list');
+  const extensionsStatus = document.getElementById('extensions-status');
+  function renderExtensions(items) {
+    extensionsList.textContent = '';
+    extensionsStatus.textContent = items.length ? `Установлено: ${items.length}` : 'Расширения не установлены.';
+    for (const item of items) {
+      const row = document.createElement('div');
+      row.className = 'permission-row';
+      const label = document.createElement('span');
+      label.className = 'permission-origin';
+      label.textContent = `${item.name} · ${item.version}`;
+      const remove = document.createElement('button');
+      remove.className = 'btn ghost';
+      remove.textContent = 'Удалить';
+      remove.addEventListener('click', async () => { await api.extensions.remove(item.id); renderExtensions(await api.extensions.list()); });
+      row.append(label, remove); extensionsList.appendChild(row);
+    }
+  }
+  async function refreshExtensions() { try { renderExtensions(await api.extensions.list()); } catch (err) { extensionsStatus.textContent = err.message || 'Расширения недоступны'; } }
+  document.getElementById('install-extension').addEventListener('click', async () => {
+    try { const result = await api.extensions.installFile(); if (!result.canceled) renderExtensions(await api.extensions.list()); }
+    catch (err) { await api.confirm('Установка расширения', err.message || 'Не удалось установить расширение'); }
+  });
+  document.getElementById('download-extension').addEventListener('click', async () => {
+    const input = document.getElementById('extension-url');
+    const url = input.value.trim();
+    if (!url) return;
+    try { await api.extensions.installUrl(url); input.value = ''; renderExtensions(await api.extensions.list()); }
+    catch (err) { await api.confirm('Загрузка расширения', err.message || 'Не удалось скачать расширение'); }
+  });
+  api.on('extensions:changed', renderExtensions);
+  await refreshExtensions();
+
   /* ── Обновления ── */
 
   const updateInfo = document.getElementById('update-info');

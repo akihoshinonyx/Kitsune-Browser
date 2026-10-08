@@ -126,6 +126,14 @@ function exposeBrowserApi() {
       folder: (id) => invoke('downloads:folder', id)
     },
 
+    /* ── Расширения Firefox WebExtension ── */
+    extensions: {
+      list: () => invoke('extensions:list'),
+      installFile: () => invoke('extensions:install-file'),
+      installUrl: (url) => invoke('extensions:install-url', url),
+      remove: (id) => invoke('extensions:remove', id)
+    },
+
     /* ── Обновления (GitHub Releases) ── */
     updater: {
       state: () => invoke('updater:state'),
@@ -205,7 +213,8 @@ function exposeBrowserApi() {
         'ui:toggle-bookmark',
         'ui:toast',
         'updater:status',
-        'downloads:changed'
+        'downloads:changed',
+        'extensions:changed'
       ];
       if (!allowed.includes(channel)) return () => {};
       const wrapped = (_event, payload) => listener(payload);
