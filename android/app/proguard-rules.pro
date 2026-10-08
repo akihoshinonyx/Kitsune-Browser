@@ -1,1 +1,0 @@
-# Kitsune Browser Android currently ships without code shrinking.
